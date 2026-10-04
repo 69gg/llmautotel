@@ -38,6 +38,7 @@ from pipecat.turns.user_turn_controller import UserTurnController
 from pipecat.turns.user_turn_strategies import UserTurnStrategies
 from pipecat.workers.runner import WorkerRunner
 
+from llmautotel.conversation import InterruptedResponseContext
 from llmautotel.models import AppSettings
 from llmautotel.providers import ProviderServices, create_services
 
@@ -104,6 +105,8 @@ def sales_prompt(settings: AppSettings) -> str:
         "连续出现多条用户消息时，不要按顺序补答旧问题；直接回答最后一条，"
         "除非用户明确要求继续旧话题或同时回答。先给当前问题的直接答案，"
         "再补充必要信息，不重复开场或无关卖点。\n"
+        "上下文中标注的 AI 生成背景是被打断、尚未完整播放的草稿，"
+        "可用于理解用户指代，但不能假定用户已听到，也不要自动续讲。\n"
         "只依据提供的产品资料介绍事实，不编造价格、优惠、保障或购买结果。\n"
         "用户明确拒绝或要求结束时尊重其意愿，简短结束，不持续施压。\n"
         f"{opening_rule}\n\n"
@@ -128,6 +131,7 @@ class VoiceSession:
         self._worker: PipelineWorker | None = None
         self._user_aggregator: LLMUserAggregator | None = None
         self._services: ProviderServices | None = None
+        self._conversation: InterruptedResponseContext | None = None
         self._reason: str | None = None
         self._state: str | None = None
         self._opened = False
@@ -202,6 +206,8 @@ class VoiceSession:
                 params=TransportParams(audio_in_enabled=True, audio_out_enabled=True),
             )
             context = LLMContext([{"role": "system", "content": sales_prompt(self._settings)}])
+            conversation = InterruptedResponseContext(context)
+            self._conversation = conversation
             user, assistant = LLMContextAggregatorPair(
                 context,
                 user_params=LLMUserAggregatorParams(
@@ -232,9 +238,12 @@ class VoiceSession:
                     transport.input(),
                     self._services.stt,
                     user,
+                    conversation.input(),
                     self._services.llm,
+                    conversation.generated(),
                     self._services.tts,
                     transport.output(),
+                    conversation.output(),
                     assistant,
                 ]
             )

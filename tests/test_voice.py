@@ -31,6 +31,7 @@ from pipecat.transports.base_transport import BaseTransport, TransportParams
 from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
 
 import llmautotel.voice as voice_module
+from llmautotel.conversation import INTERRUPTED_BACKGROUND_LABEL
 from llmautotel.models import AppSettings, TranscriptEntry, TTSSettings
 from llmautotel.providers import CompatibleTTSService
 from llmautotel.voice import TranscriptRole, VoiceCallbacks, VoiceSession
@@ -341,7 +342,7 @@ async def test_user_speaking_before_ready_suppresses_late_opening(
         await running.close()
 
 
-async def test_interrupt_cancels_streams_flushes_audio_and_keeps_only_completed_sentence(
+async def test_interrupt_keeps_completed_sentence_and_labels_unfinished_background(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     running = await start_session(monkeypatch, block_first=True)
@@ -365,7 +366,13 @@ async def test_interrupt_cancels_streams_flushes_audio_and_keeps_only_completed_
         await wait_messages(running.recorder, 3)
         new_context = running.services.llm.inputs[1]
         assert {"role": "assistant", "content": "第一句。"} in new_context
-        assert all("第二句" not in str(message) for message in new_context)
+        background = [
+            message["content"] for message in new_context
+            if str(message.get("content", "")).startswith(INTERRUPTED_BACKGROUND_LABEL)
+        ]
+        assert len(background) == 1
+        assert "第二句" in background[0]
+        assert "第一句" not in background[0]
         assert new_context[-1] == {"role": "user", "content": "先说价格。"}
         assert running.recorder.messages[-1].text == "新的回答。"
     finally:
@@ -591,8 +598,9 @@ async def test_interrupt_fixed_opening_before_complete_sentence_never_resumes(
         await wait_messages(running.recorder, 3)
         assert len(running.services.llm.inputs) == 1
         next_context = running.services.llm.inputs[0]
-        assert all(opening not in str(message) for message in next_context)
-        assert all(message["role"] != "assistant" for message in next_context)
+        assert next_context[-2] == {
+            "role": "assistant", "content": f"{INTERRUPTED_BACKGROUND_LABEL}\n{opening}"
+        }
         assert next_context[-1] == {"role": "user", "content": "先说价格。"}
         assert running.services.tts.requests == [opening, "新的回答。"]
         assert running.transport.outgoing.played[old_audio_count:]
@@ -632,8 +640,10 @@ async def test_interrupt_llm_text_before_any_tts_never_enters_spoken_context(
         await wait_messages(running.recorder, 3)
         assert len(running.services.llm.inputs) == 2
         next_context = running.services.llm.inputs[1]
-        assert all("尚未完整生成的开场" not in str(message) for message in next_context)
-        assert all(message["role"] != "assistant" for message in next_context)
+        assert next_context[-2] == {
+            "role": "assistant",
+            "content": f"{INTERRUPTED_BACKGROUND_LABEL}\n这个尚未完整生成的开场",
+        }
         assert next_context[-1] == {"role": "user", "content": "先说价格。"}
         assert running.services.tts.requests == ["新的回答。"]
         assert running.transport.outgoing.played

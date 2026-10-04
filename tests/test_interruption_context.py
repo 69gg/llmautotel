@@ -23,6 +23,7 @@ from test_providers import sse_text
 from test_voice import ControlledTTS, LocalTransport, Passthrough, Recorder, wait_messages
 
 import llmautotel.voice as voice_module
+from llmautotel.conversation import INTERRUPTED_BACKGROUND_LABEL
 from llmautotel.models import AppSettings, LLMSettings
 from llmautotel.providers import CompatibleLLMService
 from llmautotel.voice import VoiceSession
@@ -169,10 +170,16 @@ async def test_interrupted_function_request_uses_latest_price_question_in_real_s
         latest_message = next_context[-1]
         assert latest_message["role"] == "user"
         latest_content = latest_message["content"]
-        if stage == "playback":
+        if stage != "headers":
             assert latest_content == "先说价格，多少钱？"
-            assert next_context[-2] == {"role": "assistant", "content": "第一句。"}
             assert {"role": "user", "content": "有哪些功能？"} in next_context
+            assert next_context[-2]["content"].startswith(INTERRUPTED_BACKGROUND_LABEL)
+            if stage == "playback":
+                assert {"role": "assistant", "content": "第一句。"} in next_context
+                assert "第二句" in next_context[-2]["content"]
+                assert "第一句" not in next_context[-2]["content"]
+            else:
+                assert "尚未完整生成功能介绍" in next_context[-2]["content"]
         else:
             assert latest_content.startswith(BACKGROUND_MARKER)
             assert "有哪些功能？" in latest_content
@@ -186,8 +193,12 @@ async def test_interrupted_function_request_uses_latest_price_question_in_real_s
         # 只检查两项语义契约，避免将整个提示词复制到测试。
         assert "最后一条用户消息是本轮的当前请求" in system_prompt
         assert "不要续答或补讲之前被打断的话题" in system_prompt
-        assert all("第二句" not in str(message) for message in next_context)
-        assert all("尚未完整生成" not in str(message) for message in next_context)
+        spoken_messages = [
+            message for message in next_context
+            if not str(message.get("content", "")).startswith(INTERRUPTED_BACKGROUND_LABEL)
+        ]
+        assert all("第二句" not in str(message) for message in spoken_messages)
+        assert all("尚未完整生成" not in str(message) for message in spoken_messages)
         assert all("旧迟到功能答案" not in str(message) for message in next_context)
         assert services.tts.requests[tts_before_price:] == [price_answer]
         assert all("旧迟到功能答案" not in text for text in services.tts.requests)
