@@ -26,11 +26,13 @@ from pipecat.services.llm_service import FunctionCallParams
 from llmautotel.speech import clean_speech_text
 
 HANGUP_POLICY = (
-    "区分购买拒绝和直接结束通话，不要把拒绝购买猜测成直接要求挂断。"
-    "首次明确购买拒绝（如‘不需要’、‘不买了’、‘不用了，谢谢’）调用 retain_once，"
-    "引用最新用户原文为 evidence，reply 填一次简短、温和且与对方顾虑相关的挽留。"
+    "区分拒绝配置的销售目标行动和直接结束通话，不要把行动拒绝猜测成要求挂断。"
+    "首次明确拒绝目标行动（如‘不需要’、‘不买了’、‘不用了，谢谢’）调用 retain_once，"
+    "引用最新用户原文为 evidence，reply 填一次简短、温和且与对方顾虑相关的挽留："
+    "直接说明一项产品实际价值，结尾用‘考虑 + 配置目标行动 + 吗？’询问意向，"
+    "不调查用途、场景或使用频率。"
     "每通最多一次挽留尝试，挽留被打断也不能重复；不要问是否要挂断。"
-    "工具说明会告知本通是否已挽留；已挽留后的新一轮仍明确拒绝购买，"
+    "工具说明会告知本通是否已挽留；已挽留后的新一轮仍明确拒绝目标行动，"
     "才调用 hang_up 并设置 intent=purchase_refusal。\n"
     "用户直接要求结束（如‘挂了吧’、‘别再打扰’、‘结束通话’、‘请挂断’），"
     "立即调用 hang_up 并设置 intent=direct_exit，不挽留。"
@@ -38,7 +40,7 @@ HANGUP_POLICY = (
     "goodbye 填带祝福的简短礼貌告别，例如‘好的，祝您生活愉快，再见。’。"
     "工具会完整朗读 goodbye 后挂断，不要另外生成重复告别。\n"
     "用户意思不明确时继续回应问题、介绍相关价值并推进销售，不要问是否要挂断。"
-    "价格抱怨、犹豫、沉默，都不能推断为明确购买拒绝或结束通话。"
+    "价格抱怨、犹豫、沉默，都不能推断为明确拒绝目标行动或结束通话。"
     "用户仍提出问题、要求继续或说不要挂断时不得调用工具。\n"
 )
 
@@ -85,14 +87,14 @@ class HangupController(FrameProcessor):
     def tools(self) -> ToolsSchema:
         retention_state = (
             "本通已使用一次挽留尝试，不能再挽留；根据最新发言回答问题，"
-            "若新一轮仍明确拒绝购买则告别挂断。"
+            "若新一轮仍明确拒绝目标行动则告别挂断。"
             if self._retention is not None else
-            "本通尚未挽留；首次购买拒绝必须先调用 retain_once，不能直接挂断。"
+            "本通尚未挽留；首次拒绝目标行动必须先调用 retain_once，不能直接挂断。"
         )
         return ToolsSchema(standard_tools=[FunctionSchema(
             name="hang_up",
             description=(
-                "最新发言直接要求结束，或已挽留一次后新一轮仍明确拒绝购买时，"
+                "最新发言直接要求结束，或已挽留一次后新一轮仍明确拒绝目标行动时，"
                 "完整播放带祝福的告别再挂断。"
                 "含糊、嫌贵、犹豫或仍有问题时继续销售对话，不能猜测或询问是否挂断。"
                 f"{retention_state}"
@@ -100,7 +102,10 @@ class HangupController(FrameProcessor):
             properties={
                 "intent": {
                     "type": "string", "enum": ["direct_exit", "purchase_refusal"],
-                    "description": "direct_exit=直接要求结束；purchase_refusal=仅拒绝购买。",
+                    "description": (
+                        "direct_exit=直接要求结束；purchase_refusal=拒绝当前销售目标行动，"
+                        "可为购买、订阅或其他配置目标。"
+                    ),
                 },
                 "confirmed": {
                     "type": "boolean", "enum": [True],
@@ -123,18 +128,26 @@ class HangupController(FrameProcessor):
         ), FunctionSchema(
             name="retain_once",
             description=(
-                "仅在首次明确购买拒绝时，播放一次简短温和的挽留，然后等待用户回应。"
+                "仅在首次明确拒绝目标行动时，播放一次简短温和的挽留，然后等待用户回应。"
                 "直接要求结束通话、含糊犹豫、嫌贵或提出问题时不调用。"
                 f"{retention_state}"
             ),
             properties={
                 "evidence": {
                     "type": "string",
-                    "description": "完整引用当前明确购买拒绝的原文，不包含‘当前用户发言’管理标记。",
+                    "description": (
+                        "完整引用当前明确拒绝目标行动的原文，"
+                        "不包含‘当前用户发言’管理标记。"
+                    ),
                 },
                 "reply": {
                     "type": "string",
-                    "description": "一次简短、温和的挽留，围绕顾虑与产品实际价值，不询问是否挂断。",
+                    "description": (
+                        "一次简短温和的挽留：介绍一项产品实际价值，"
+                        "结尾用‘考虑 + 配置目标行动 + 吗？’询问意向。"
+                        "不调查用途、场景或使用频率，不询问是否挂断。"
+                        "只询问意向，不承诺代办没有实际工具支持的操作。"
+                    ),
                 },
             },
             required=["evidence", "reply"],
@@ -227,7 +240,7 @@ class HangupController(FrameProcessor):
             await params.result_callback(
                 {"accepted": False, "retention_used": self._retention is not None,
                  "message": (
-                     "首次购买拒绝先调用 retain_once 挽留一次，不得挂断；"
+                     "首次拒绝目标行动先调用 retain_once 挽留一次，不得挂断；"
                      "挽留后等待用户新一轮回应，再次明确拒绝才告别。"
                      if intent == "purchase_refusal" and not purchase_refusal_allowed else
                      "未确认当前用户明确结束，或挂断已在处理。"
