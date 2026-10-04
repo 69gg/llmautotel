@@ -34,6 +34,8 @@ ASR 复用 Pipecat `OpenAISTTService` 的分段识别，麦克风输入为 16 kH
 SDK 自动重试和 Pipecat 的超时重试都关闭，每次模型请求失败由会话层结束当前会话。
 请求超时是单次连接或读写等待的上限，不是整通会话的时限。
 
+通过 Pipecat 1.12.0 的公开 `build_chat_completion_params` 钩子，在 SDK 编码前处理末尾连续两条以上的纯文本用户消息：保留之前发言作为背景，将最后发言标为当前请求。背景提示允许用户明确要求继续或同时回答。该处理仅创建请求副本，不改原始 `LLMContext`、文字历史或模型参数；不会跨过助手消息，也不合并多模态内容。系统提示同时要求插话后先回答当前问题，避免仍按顺序补答未完成的旧问题。
+
 TTS 是继承 Pipecat `TTSService` 的薄适配器，沿用框架的分句、打断和文本同步。
 `voice` 是服务商的任意音色字符串，不限制为 OpenAI 的预置音色。
 音频必须是**单声道、16 位小端 PCM**；`sample_rate` 说明服务实际输出采样率，
@@ -65,7 +67,7 @@ WAV multipart、独立接口路径和鉴权、SSE 文本、任意音色、分块
 测试也覆盖 LLM 在管线中的 SSE 取消、流中途超时后的响应关闭，以及非 PCM 类型拒绝。
 真实 Pipecat 管线测试检查连续两句的音频、文字、停止帧顺序，并要求在 1 秒内完成。
 这些是可控 HTTP 协议测试，不代表已经连接真实服务商或完成真实设备语音验收。
-`tests/test_mimo.py` 验证 MiMo 的 JSON/WAV/Base64/SSE 请求与取消；`tests/test_llm_options.py` 验证思考参数、实际省略 token 上限，以及思考内容不进入 TTS。真实服务结果单独记录在 [验收记录](acceptance.md)。
+`tests/test_mimo.py` 验证 MiMo 的 JSON/WAV/Base64/SSE 请求与取消；`tests/test_llm_options.py` 验证思考参数、实际省略 token 上限，以及思考内容不进入 TTS。`tests/test_interruption_context.py` 检查打断后真实 SDK 序列化的当前问题、背景保留、上下文不变与重复请求，以及三阶段旧流取消和下一轮音频输出。真实服务结果单独记录在 [验收记录](acceptance.md)。
 
 参考：
 

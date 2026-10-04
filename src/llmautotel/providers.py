@@ -14,6 +14,7 @@ from openai import APITimeoutError, AsyncOpenAI, AsyncStream, DefaultAsyncHttpxC
 from openai._models import FinalRequestOptions
 from openai.types.audio import Transcription
 from openai.types.chat import ChatCompletionChunk
+from pipecat.adapters.services.open_ai_adapter import OpenAILLMInvocationParams
 from pipecat.frames.frames import (
     AggregatedTextFrame,
     ErrorFrame,
@@ -197,6 +198,33 @@ class CompatibleLLMService(OpenAILLMService):
             return await super().get_chat_completions(context)
         except Exception as error:
             raise ProviderFailure("llm", error) from None
+
+    def build_chat_completion_params(
+        self, params_from_context: OpenAILLMInvocationParams
+    ) -> dict[str, Any]:
+        params = super().build_chat_completion_params(params_from_context)
+        messages = params["messages"]
+        start = len(messages)
+        while start and messages[start - 1].get("role") == "user":
+            if not isinstance(messages[start - 1].get("content"), str):
+                break
+            start -= 1
+        if len(messages) - start > 1:
+            # 未播放出完整助手句子时，旧问题与插话相邻；请求中区分背景和当前任务。
+            # 仅创建请求副本，不删除原始上下文、伪造助手回答或改写文字历史。
+            background = "\n".join(message["content"] for message in messages[start:-1])
+            current = messages[-1]["content"]
+            params["messages"] = messages[:start] + [
+                {
+                    "role": "user",
+                    "content": (
+                        "历史用户发言，仅作为背景；除非当前用户明确要求继续或同时回答，"
+                        f"本轮不补答：\n{background}\n\n"
+                        f"当前用户发言，请直接回答这一条：\n{current}"
+                    ),
+                }
+            ]
+        return params
 
     async def _process_context(self, context: LLMContext) -> None:
         try:

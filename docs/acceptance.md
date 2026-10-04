@@ -11,6 +11,7 @@
 | 模型协议 | 真实 SDK 编码的独立地址/鉴权/model、WAV multipart、SSE、任意音色、PCM 分块与采样率、无鉴权不继承环境密钥、取消关流、错误去敏且不重试 | `tests/test_providers.py` |
 | MiMo 与思考参数 | MiMo WAV Data URL / JSON / Base64 SSE、空结果、错误、取消关流、24 kHz 约束；DeepSeek 思考参数、token 上限省略、思考内容不进入 TTS | `tests/test_mimo.py`、`tests/test_llm_options.py` |
 | 语音管线 | 固定/生成开场只一次、用户先说时不补开场、打断清输出队列并取消 LLM/TTS、已播放句保留、未播放半句不进入下一轮、空识别不回复、慢识别及 watchdog | `tests/test_voice.py` |
+| 打断后当前问题 | 响应头/生成流/播放阶段改问价格；实际 SDK 请求区分旧背景与新问题、旧流关闭且迟到不恢复；连续三条发言、明确继续、多模态与助手边界；源上下文和原始记录不变、重复请求不嵌套 | `tests/test_interruption_context.py` |
 | 连续讲话 | 第一段迟到、第二段尚在识别时不提前回答；两段有效/空结果的四种组合；全部最终结果后只回复一次 | `tests/test_segmented_turns.py` |
 | 挂断收尾 | 收尾前槽位仍占用、保存已说句与中断标记、迟到回调丢弃、立即重拨隔离、协商完成但后台未启动时挂断不创建模型 | `tests/test_lifecycle.py` |
 | 真实 WebRTC 协议 | 实际 aiortc / SmallWebRTC SDP 与 ICE、RTVI ready、UDP/RTP/Opus 音频解码、开场及记录、两客户端抢占、连接释放和立即重拨 | `tests/test_webrtc.py` |
@@ -28,7 +29,7 @@ pnpm --dir frontend test
 pnpm --dir frontend build
 ```
 
-后端 **95 项通过**，前端 **6 个文件、39 项通过**，Ruff、TypeScript 检查与 Vite 生产构建通过。框架会提示 Python `audioop`、旧 TTS 基类及上下文 system 消息弃用；项目锁定 Python 3.12 / Pipecat 1.12.0，当前不影响通过结果。前端生产构建的大包提示属于体积建议，不是构建失败。
+后端 **104 项通过**，Ruff 检查通过。前端此前验证 **6 个文件、39 项通过**，TypeScript 检查与 Vite 生产构建通过；本次打断后回复修复仅修改后端，未重复前端构建。框架会提示 Python `audioop`、旧 TTS 基类及上下文 system 消息弃用；项目锁定 Python 3.12 / Pipecat 1.12.0，当前不影响通过结果。前端生产构建的大包提示属于体积建议，不是构建失败。
 
 开场音轨回归先在原实现运行：两个播放相关测试失败，分别复现未挂载远端音轨和未出现自动播放受限提示；调整音轨判断后，针对性前端测试 **17 项通过**，完整前端测试 **39 项通过**，独立 TypeScript 检查和生产构建通过。
 
@@ -54,6 +55,10 @@ pnpm --dir frontend build
 | DeepSeek LLM | `deepseek-flash`，`thinking=enabled`，`reasoning_effort=high`，流式回答“接口连接成功。”；未设置两种 token 上限 | 完整文本流 1.153 秒 |
 
 以上是一次接口连通性样本，不是多次统计、浏览器通话端到端延迟或实际打断延迟。音频仅存在内存中，验证结束后释放客户端。真实麦克风和扬声器未用于此测试。
+
+随后按用户要求关闭 DeepSeek 思考（`thinking=disabled`，保留 `reasoning_effort=high`，无 token 上限），使用当前销售资料与实际 LLM 适配器重放“它可以干什么？”后改问“多贵呀？”的上下文。原请求虽然末条已经是价格问题，模型仍先介绍功能；仅强化系统提示也仍补答功能。请求中明确标记历史背景与当前发言后，最终实现的实际请求让模型直接回答“官方公开标价是每月 20 美元，实际币种、税费和最终金额以您在官方订阅页面看到的为准。”，不再先补讲功能。原始上下文保持两条原始用户发言不变。
+
+这是小规模真实模型对照，验证了该场景的回答方向；不是多次稳定性统计，也未在此修复中启动真实麦克风通话。取消、迟到隔离与实际 SDK 请求内容由上述自动化回归验证，耳机/外放体验和开口停音延迟仍需设备测量。
 
 ## 真实设备体验：待验收
 
