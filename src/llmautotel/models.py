@@ -1,0 +1,117 @@
+"""应用配置和公开响应；密钥从不进入公开模型。"""
+
+from typing import Any, Literal
+from urllib.parse import urlsplit
+
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+
+
+class StrictModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class SalesSettings(StrictModel):
+    goal: str = ""
+    product_info: str = ""
+    instructions: str = ""
+    opening: str = ""
+
+
+class ProviderSettings(StrictModel):
+    base_url: str = ""
+    model: str = ""
+    api_key: SecretStr | None = None
+    timeout_seconds: float = Field(default=30, ge=1, le=300)
+
+    @field_validator("base_url")
+    @classmethod
+    def validate_url(cls, value: str) -> str:
+        value = value.strip().rstrip("/")
+        if not value:
+            return value
+        parsed = urlsplit(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise ValueError("API 地址须使用 http 或 https")
+        if parsed.username or parsed.password or parsed.query or parsed.fragment:
+            raise ValueError("API 地址不能包含凭据、查询参数或片段；请单独填写密钥")
+        return value
+
+
+class ASRSettings(ProviderSettings):
+    language: str = "zh"
+
+
+class LLMSettings(ProviderSettings):
+    pass
+
+
+class TTSSettings(ProviderSettings):
+    voice: str = ""
+    sample_rate: int = Field(default=24000, ge=8000, le=96000)
+
+
+class VoiceSettings(StrictModel):
+    vad_start_seconds: float = Field(default=0.1, ge=0.05, le=1)
+    vad_stop_seconds: float = Field(default=0.6, ge=0.2, le=3)
+    vad_confidence: float = Field(default=0.7, gt=0, lt=1)
+
+
+class AppSettings(StrictModel):
+    sales: SalesSettings = Field(default_factory=SalesSettings)
+    asr: ASRSettings = Field(default_factory=ASRSettings)
+    llm: LLMSettings = Field(default_factory=LLMSettings)
+    tts: TTSSettings = Field(default_factory=TTSSettings)
+    voice: VoiceSettings = Field(default_factory=VoiceSettings)
+
+    def public(self) -> dict[str, Any]:
+        result = self.model_dump(
+            mode="json", exclude={"asr": {"api_key"}, "llm": {"api_key"}, "tts": {"api_key"}}
+        )
+        for stage in ("asr", "llm", "tts"):
+            provider = getattr(self, stage)
+            result[stage]["api_key_set"] = bool(
+                provider.api_key and provider.api_key.get_secret_value()
+            )
+        return result
+
+    def private(self) -> dict[str, Any]:
+        result = self.model_dump(mode="json")
+        for stage in ("asr", "llm", "tts"):
+            provider = getattr(self, stage)
+            result[stage]["api_key"] = (
+                provider.api_key.get_secret_value() if provider.api_key else None
+            )
+        return result
+
+    def missing_call_fields(self) -> list[str]:
+        missing: list[str] = []
+        if not self.sales.goal.strip():
+            missing.append("销售目标")
+        if not self.sales.product_info.strip():
+            missing.append("产品资料")
+        for stage, label in (("asr", "ASR"), ("llm", "LLM"), ("tts", "TTS")):
+            provider = getattr(self, stage)
+            if not provider.base_url:
+                missing.append(f"{label} API 地址")
+            if not provider.model.strip():
+                missing.append(f"{label} 模型")
+        if not self.tts.voice.strip():
+            missing.append("TTS 音色")
+        return missing
+
+
+class TranscriptEntry(StrictModel):
+    role: Literal["user", "assistant"]
+    text: str
+    timestamp: str
+    interrupted: bool = False
+
+
+class CallRecord(StrictModel):
+    id: str
+    started_at: str
+    ended_at: str | None = None
+    status: Literal["connecting", "active", "ended", "failed"] = "connecting"
+    end_reason: str | None = None
+    settings: dict[str, Any]
+    transcript: list[TranscriptEntry] = Field(default_factory=list)

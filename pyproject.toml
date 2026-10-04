@@ -1,0 +1,32 @@
+[project]
+name = "llmautotel"
+version = "0.1.0"
+description = "可配置目标的本机语音销售助手"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "uvicorn>=0.30,<1",
+  "pipecat-ai[webrtc]==1.12.0",
+  "httpx>=0.28,<1",
+]
+
+[project.scripts]
+llmautotel = "llmautotel.main:run"
+
+[dependency-groups]
+dev = ["pytest>=8,<10", "pytest-asyncio>=1,<2", "httpx>=0.28,<1", "ruff>=0.12,<1"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
