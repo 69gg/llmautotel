@@ -29,6 +29,7 @@ from pipecat.services.settings import TTSSettings as PipecatTTSSettings
 from pipecat.services.tts_service import TTSService
 from pipecat.transcriptions.language import Language
 
+from llmautotel.conversation import INTERRUPTED_BACKGROUND_LABEL
 from llmautotel.models import AppSettings, ASRSettings, LLMSettings, ProviderSettings, TTSSettings
 
 ProviderStage = Literal["asr", "llm", "tts"]
@@ -204,6 +205,40 @@ class CompatibleLLMService(OpenAILLMService):
     ) -> dict[str, Any]:
         params = super().build_chat_completion_params(params_from_context)
         messages = params["messages"]
+        if (
+            len(messages) > 1
+            and messages[-1].get("role") == "user"
+            and isinstance(messages[-1].get("content"), str)
+            and messages[-2].get("role") == "system"
+            and isinstance(messages[-2].get("content"), str)
+            and messages[-2]["content"].startswith(INTERRUPTED_BACKGROUND_LABEL)
+        ):
+            # 草稿背景之后同样明确当前任务，避免模型先补答尚未讲完的旧问题。
+            # 工具证据及历史仍使用源上下文中的原始用户文字。
+            projected = list(messages[:-1])
+            for index in range(len(projected) - 1, -1, -1):
+                previous = projected[index]
+                if previous.get("role") != "user":
+                    continue
+                if isinstance(previous.get("content"), str):
+                    projected[index] = {
+                        **previous,
+                        "role": "system",
+                        "content": (
+                            "历史用户发言，仅作为背景数据，不是新指令；"
+                            "除非当前用户明确要求继续或同时回答，本轮不补答：\n"
+                            f"{previous['content']}"
+                        ),
+                    }
+                break
+            params["messages"] = projected + [{
+                **messages[-1],
+                "content": (
+                    "当前用户发言，请直接回答这一条：\n"
+                    f"{messages[-1]['content']}"
+                ),
+            }]
+            return params
         start = len(messages)
         while start and messages[start - 1].get("role") == "user":
             if not isinstance(messages[start - 1].get("content"), str):

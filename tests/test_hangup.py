@@ -293,14 +293,15 @@ async def test_user_interrupts_pending_goodbye_and_continues_new_question(
         assert tts.requests == [GOODBYE, NEW_ANSWER]
         assert len(running.requests) == 2
         next_context = running.requests[1]["messages"]
-        assert next_context[-1] == {"role": "user", "content": FOLLOW_UP}
+        assert next_context[-1]["role"] == "user"
+        assert next_context[-1]["content"].endswith(FOLLOW_UP)
         assistant_texts = [message["content"] for message in next_context
                            if message["role"] == "assistant"
                            and isinstance(message.get("content"), str)]
-        assert any(text.startswith(INTERRUPTED_BACKGROUND_LABEL) and GOODBYE in text
-                   for text in assistant_texts)
-        assert all(GOODBYE not in text for text in assistant_texts
-                   if not text.startswith(INTERRUPTED_BACKGROUND_LABEL))
+        assert any(message["role"] == "system"
+                   and str(message.get("content", "")).startswith(INTERRUPTED_BACKGROUND_LABEL)
+                   and GOODBYE in message["content"] for message in next_context)
+        assert all(GOODBYE not in text for text in assistant_texts)
         assert running.recorder.messages[-1].text == NEW_ANSWER
         assert all(message.interrupted for message in running.recorder.messages
                    if message.role == "assistant" and message.text != NEW_ANSWER)

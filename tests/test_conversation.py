@@ -63,7 +63,7 @@ def test_partial_generated_price_becomes_background_before_latest_question() -> 
     messages = context.get_messages()
     assert messages[-1] == {"role": "user", "content": "人民币大概多少钱？"}
     assert messages[-2] == {
-        "role": "assistant",
+        "role": "system",
         "content": f"{INTERRUPTED_BACKGROUND_LABEL}\n每月 20 美元，人民币金额以",
     }
     assert messages[1] == {"role": "user", "content": "多少钱？"}

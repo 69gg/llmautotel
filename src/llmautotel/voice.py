@@ -43,6 +43,7 @@ from llmautotel.conversation import InterruptedResponseContext
 from llmautotel.hangup import HANGUP_POLICY, HangupController
 from llmautotel.models import AppSettings
 from llmautotel.providers import ProviderServices, create_services
+from llmautotel.speech import SpeechTextGuard
 
 TranscriptRole = Literal["user", "assistant"]
 
@@ -108,7 +109,8 @@ def sales_prompt(settings: AppSettings) -> str:
         "除非用户明确要求继续旧话题或同时回答。先给当前问题的直接答案，"
         "再补充必要信息，不重复开场或无关卖点。\n"
         "上下文中标注的 AI 生成背景是被打断、尚未完整播放的草稿，"
-        "可用于理解用户指代，但不能假定用户已听到，也不要自动续讲。\n"
+        "可用于理解用户指代，但不能假定用户已听到，也不要自动续讲。"
+        "背景标签及管理说明仅供内部使用，绝不能朗读、复述或出现在回复正文中。\n"
         "只依据提供的产品资料介绍事实，不编造价格、优惠、保障或购买结果。\n"
         "用户明确拒绝时尊重其意愿，不持续施压；是否结束通话以明确发言为准。\n"
         f"{HANGUP_POLICY}"
@@ -254,6 +256,7 @@ class VoiceSession:
                     user,
                     conversation.input(),
                     self._services.llm,
+                    SpeechTextGuard(),
                     conversation.generated(),
                     self._services.tts,
                     transport.output(),

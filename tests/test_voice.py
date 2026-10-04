@@ -599,7 +599,7 @@ async def test_interrupt_fixed_opening_before_complete_sentence_never_resumes(
         assert len(running.services.llm.inputs) == 1
         next_context = running.services.llm.inputs[0]
         assert next_context[-2] == {
-            "role": "assistant", "content": f"{INTERRUPTED_BACKGROUND_LABEL}\n{opening}"
+            "role": "system", "content": f"{INTERRUPTED_BACKGROUND_LABEL}\n{opening}"
         }
         assert next_context[-1] == {"role": "user", "content": "先说价格。"}
         assert running.services.tts.requests == [opening, "新的回答。"]
@@ -641,7 +641,7 @@ async def test_interrupt_llm_text_before_any_tts_never_enters_spoken_context(
         assert len(running.services.llm.inputs) == 2
         next_context = running.services.llm.inputs[1]
         assert next_context[-2] == {
-            "role": "assistant",
+            "role": "system",
             "content": f"{INTERRUPTED_BACKGROUND_LABEL}\n这个尚未完整生成的开场",
         }
         assert next_context[-1] == {"role": "user", "content": "先说价格。"}

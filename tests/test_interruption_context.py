@@ -171,9 +171,17 @@ async def test_interrupted_function_request_uses_latest_price_question_in_real_s
         assert latest_message["role"] == "user"
         latest_content = latest_message["content"]
         if stage != "headers":
-            assert latest_content == "先说价格，多少钱？"
-            assert {"role": "user", "content": "有哪些功能？"} in next_context
+            assert latest_content.startswith(CURRENT_MARKER)
+            assert latest_content.endswith("先说价格，多少钱？")
+            assert {"role": "user", "content": "有哪些功能？"} not in next_context
+            assert any(
+                message["role"] == "system"
+                and message["content"].startswith("历史用户发言，仅作为背景数据")
+                and message["content"].endswith("有哪些功能？")
+                for message in next_context
+            )
             assert next_context[-2]["content"].startswith(INTERRUPTED_BACKGROUND_LABEL)
+            assert next_context[-2]["role"] == "system"
             if stage == "playback":
                 assert {"role": "assistant", "content": "第一句。"} in next_context
                 assert "第二句" in next_context[-2]["content"]
@@ -319,3 +327,162 @@ async def test_sdk_request_projects_pending_questions_without_mutating_or_nestin
         assert background.count(previous_question) == 1
     background_positions = [background.index(text) for text in texts[:-1]]
     assert background_positions == sorted(background_positions)
+
+
+async def test_interrupted_draft_request_preserves_completed_sentence_and_older_history() -> None:
+    older_history = [
+        {"role": "user", "content": "你好。"},
+        {"role": "assistant", "content": "您好，您想了解什么？"},
+    ]
+    previous_question = {"role": "user", "content": "人民币多少钱？"}
+    completed_sentence = {"role": "assistant", "content": "费用以官方订阅页面为准。"}
+    background = {
+        "role": "system",
+        "content": f"{INTERRUPTED_BACKGROUND_LABEL}\n我再介绍一下付费方式。",
+    }
+    latest_question = "可以干啥？"
+    messages = older_history + [
+        previous_question,
+        completed_sentence,
+        background,
+        {"role": "user", "content": latest_question},
+    ]
+
+    bodies = await serialize_context_twice(messages)
+    actual = bodies[0]["messages"]
+
+    assert len(actual) == len(messages)
+    assert actual[:len(older_history)] == older_history
+    assert actual[2]["role"] == "system"
+    assert actual[2]["content"].endswith(previous_question["content"])
+    assert "本轮不补答" in actual[2]["content"]
+    assert actual[3:5] == [completed_sentence, background]
+    assert actual[-1] == {"role": "user", "content": f"{CURRENT_MARKER}\n{latest_question}"}
+
+
+async def test_interrupted_draft_request_keeps_tool_call_and_result_pairs_in_order() -> None:
+    previous_question = "不需要了。"
+    tool_messages = [
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{
+                "id": "retain-request-1",
+                "type": "function",
+                "function": {
+                    "name": "retain_once",
+                    "arguments": json.dumps({
+                        "evidence": previous_question,
+                        "reply": "可以先了解一下用途。",
+                    }),
+                },
+            }],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "retain-request-1",
+            "content": json.dumps({"accepted": True, "retention_used": True}),
+        },
+        {"role": "assistant", "content": "可以先了解一下用途。"},
+    ]
+    background = {
+        "role": "system",
+        "content": f"{INTERRUPTED_BACKGROUND_LABEL}\n您平时主要用来学习还是工作？",
+    }
+    latest_question = "还是不要了，挂了吧。"
+    messages = [
+        {"role": "system", "content": "销售助手，仅依据资料回答。"},
+        {"role": "user", "content": previous_question},
+        *tool_messages,
+        background,
+        {"role": "user", "content": latest_question},
+    ]
+
+    bodies = await serialize_context_twice(messages)
+    actual = bodies[0]["messages"]
+
+    assert len(actual) == len(messages)
+    assert actual[0] == messages[0]
+    assert actual[1]["role"] == "system"
+    assert actual[1]["content"].endswith(previous_question)
+    assert actual[2:5] == tool_messages
+    assert actual[5] == background
+    assert actual[-1] == {"role": "user", "content": f"{CURRENT_MARKER}\n{latest_question}"}
+
+
+async def test_interrupted_opening_request_has_no_previous_user_to_rewrite() -> None:
+    opening_background = {
+        "role": "system",
+        "content": f"{INTERRUPTED_BACKGROUND_LABEL}\n您好，考虑了解订阅吗？",
+    }
+    latest_question = "它能做什么？"
+    messages = [
+        {"role": "system", "content": "销售助手，仅依据资料回答。"},
+        opening_background,
+        {"role": "user", "content": latest_question},
+    ]
+
+    bodies = await serialize_context_twice(messages)
+    actual = bodies[0]["messages"]
+
+    assert actual[:-1] == messages[:-1]
+    assert actual[-1] == {"role": "user", "content": f"{CURRENT_MARKER}\n{latest_question}"}
+
+
+async def test_interrupted_draft_request_does_not_skip_a_multimodal_previous_user() -> None:
+    history = [
+        {"role": "user", "content": "人民币多少钱？"},
+        {"role": "assistant", "content": "价格以订阅页面为准。"},
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "这个页面的订阅有什么区别？"},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": "https://fixture.invalid/subscription.png"},
+                },
+            ],
+        },
+        {
+            "role": "system",
+            "content": f"{INTERRUPTED_BACKGROUND_LABEL}\n页面列出了可用功能。",
+        },
+    ]
+    latest_question = "先说我能拿它做什么。"
+    messages = history + [{"role": "user", "content": latest_question}]
+
+    bodies = await serialize_context_twice(messages)
+    actual = bodies[0]["messages"]
+
+    assert actual[:-1] == history
+    assert actual[-1] == {"role": "user", "content": f"{CURRENT_MARKER}\n{latest_question}"}
+
+
+@pytest.mark.parametrize(
+    "latest_question",
+    ["继续刚才的价格，把没说完的说完。", "价格和功能都说一下。"],
+    ids=["continue-interrupted-question", "answer-both-questions"],
+)
+async def test_interrupted_draft_request_retains_explicit_current_request_and_reference_data(
+    latest_question: str,
+) -> None:
+    previous_question = "这个用人民币要多少钱？"
+    background = {
+        "role": "system",
+        "content": f"{INTERRUPTED_BACKGROUND_LABEL}\n汇率和地区税费会影响最终金额。",
+    }
+    messages = [
+        {"role": "user", "content": previous_question},
+        background,
+        {"role": "user", "content": latest_question},
+    ]
+
+    bodies = await serialize_context_twice(messages)
+    actual = bodies[0]["messages"]
+
+    assert len(actual) == len(messages)
+    assert actual[0]["role"] == "system"
+    assert actual[0]["content"].endswith(previous_question)
+    assert "明确要求继续或同时回答" in actual[0]["content"]
+    assert actual[1] == background
+    assert actual[-1] == {"role": "user", "content": f"{CURRENT_MARKER}\n{latest_question}"}

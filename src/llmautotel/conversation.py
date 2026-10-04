@@ -193,7 +193,8 @@ class InterruptedResponseContext:
                 break
         backgrounds = [
             {
-                "role": "assistant",
+                # 状态说明是内部管理信息，不能让模型当作助手说话风格模仿。
+                "role": "system",
                 "content": f"{INTERRUPTED_BACKGROUND_LABEL}\n{response.background_text}",
             }
             for response in self._pending
