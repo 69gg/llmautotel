@@ -10,6 +10,7 @@ class RuntimeConfig:
     host: str = "127.0.0.1"
     port: int = 8765
     data_dir: Path = Path("data")
+    connection_timeout_seconds: float = 30
     frontend_dir: Path = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
     @classmethod
@@ -18,5 +19,8 @@ class RuntimeConfig:
             host=os.environ.get("LLMAUTOTEL_HOST", "127.0.0.1"),
             port=int(os.environ.get("LLMAUTOTEL_PORT", "8765")),
             data_dir=Path(os.environ.get("LLMAUTOTEL_DATA_DIR", "data")),
+            connection_timeout_seconds=float(
+                os.environ.get("LLMAUTOTEL_CONNECTION_TIMEOUT_SECONDS", "30")
+            ),
             frontend_dir=Path(os.environ.get("LLMAUTOTEL_FRONTEND_DIR", str(cls().frontend_dir))),
         )

@@ -11,6 +11,8 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@pipecat-ai/client-js": "1.13.1",
+    "@pipecat-ai/small-webrtc-transport": "1.10.8",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },

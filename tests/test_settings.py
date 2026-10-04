@@ -47,6 +47,9 @@ def test_validation_never_echoes_secret_input(tmp_path: Path) -> None:
         response = client.put("/api/settings", json={"asr": {"base_url": "https://key@test/v1"}})
         assert response.status_code == 422
         assert "https://key@" not in response.text
+        response = client.put("/api/settings", json={"asr": {"language": "invalid-language"}})
+        assert response.status_code == 422
+        assert "invalid-language" not in response.text
 
 
 async def test_settings_are_loaded_as_secrets(tmp_path: Path) -> None:

@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import sqlite3
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -106,3 +107,22 @@ class Store:
                 return cursor.rowcount > 0
 
         return await asyncio.to_thread(delete)
+
+    async def finalize_unfinished_calls(self) -> None:
+        """进程意外终止后，旧会话不能继续显示为通话中。"""
+
+        def finalize() -> None:
+            with self._connect() as connection:
+                rows = connection.execute("SELECT id, body FROM calls").fetchall()
+                for call_id, body in rows:
+                    record = CallRecord.model_validate_json(body)
+                    if record.ended_at is None:
+                        record.status = "failed"
+                        record.ended_at = datetime.now(UTC).isoformat()
+                        record.end_reason = "server_restarted"
+                        connection.execute(
+                            "UPDATE calls SET body = ? WHERE id = ?",
+                            (record.model_dump_json(), call_id),
+                        )
+
+        await asyncio.to_thread(finalize)

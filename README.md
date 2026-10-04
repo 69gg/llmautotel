@@ -37,4 +37,4 @@ pnpm --dir frontend test
 pnpm --dir frontend build
 ```
 
-配置与持久化、独立模型接入已实现，协议要求和适配说明见 [模型接入文档](docs/providers.md)。语音通话与文字历史按模块继续交付并同步补充验收文档。
+配置、独立模型接入及可打断的浏览器语音通话已实现。协议要求见 [模型接入文档](docs/providers.md)，开场、状态、分段识别及上下文规则见 [语音管线文档](docs/voice.md)，接口见 [API 文档](docs/api.md)。文字历史页面与完整验收记录将在最后一个模块补齐。

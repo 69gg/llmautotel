@@ -23,6 +23,35 @@ export type SettingsUpdate = Omit<Settings, ProviderName> & {
 
 export type SecretDrafts = Record<ProviderName, string | null>;
 
+export interface TranscriptEntry {
+  role: 'user' | 'assistant';
+  text: string;
+  timestamp: string;
+  interrupted: boolean;
+}
+
+export interface CallRecord {
+  id: string;
+  started_at: string;
+  ended_at: string | null;
+  status: string;
+  end_reason: string | null;
+  settings: Settings;
+  transcript: TranscriptEntry[];
+}
+
+export interface CallConnection {
+  webrtcRequestParams: { endpoint: string };
+  iceConfig: { iceServers: RTCIceServer[] };
+}
+
+export interface StartCallResult {
+  call: CallRecord;
+  connection: CallConnection;
+}
+
+export type EndReason = 'user_hangup' | 'connection_lost';
+
 export function settingsUpdate(settings: Settings, secrets: SecretDrafts): SettingsUpdate {
   const provider = <T extends ProviderSettings>(value: T, secret: string | null) => {
     const { api_key_set: _isSet, ...publicValue } = value;

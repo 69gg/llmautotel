@@ -40,6 +40,18 @@ class ProviderSettings(StrictModel):
 class ASRSettings(ProviderSettings):
     language: str = "zh"
 
+    @field_validator("language")
+    @classmethod
+    def validate_language(cls, value: str) -> str:
+        from pipecat.transcriptions.language import Language
+
+        value = value.strip()
+        try:
+            Language(value)
+        except ValueError:
+            raise ValueError("识别语言须为支持的语言代码，例如 zh 或 en") from None
+        return value
+
 
 class LLMSettings(ProviderSettings):
     pass
