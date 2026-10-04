@@ -1,5 +1,5 @@
 import type { RTVIEventCallbacks } from '@pipecat-ai/client-js';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../api';
 import { VoiceCallController, type VoiceClient, type VoiceDependencies } from '../voiceCall';
 import type { CallRecord, StartCallResult } from '../types';
@@ -24,7 +24,7 @@ function setup(overrides: Partial<VoiceDependencies> = {}) {
   const dependencies: VoiceDependencies = {
     startCall, endCall,
     createClient: callbacks => {
-      const track = { stop: vi.fn(), applyConstraints: vi.fn().mockResolvedValue(undefined) };
+      const track = { kind: 'audio', stop: vi.fn(), applyConstraints: vi.fn().mockResolvedValue(undefined) };
       const client: VoiceClient = {
         initDevices: vi.fn().mockResolvedValue(undefined),
         connect: vi.fn(async () => { callbacks.onBotReady?.({} as never); }),
@@ -39,6 +39,32 @@ function setup(overrides: Partial<VoiceDependencies> = {}) {
   };
   return { controller: new VoiceCallController(dependencies), clients, startCall, endCall };
 }
+
+function playback() {
+  const frames: FrameRequestCallback[] = [];
+  const close = vi.fn().mockResolvedValue(undefined);
+  const resume = vi.fn().mockResolvedValue(undefined);
+  class TestStream {
+    constructor(private readonly tracks: MediaStreamTrack[]) {}
+    getAudioTracks() { return this.tracks; }
+  }
+  class TestAudioContext {
+    destination = {};
+    close = close;
+    resume = resume;
+    createMediaStreamSource() { return { connect: vi.fn(), disconnect: vi.fn() }; }
+    createAnalyser() { return { fftSize: 256, connect: vi.fn(), disconnect: vi.fn(), getFloatTimeDomainData: (samples: Float32Array) => samples.fill(.05) }; }
+    createGain() { return { gain: { value: 1 }, connect: vi.fn(), disconnect: vi.fn() }; }
+  }
+  vi.stubGlobal('MediaStream', TestStream);
+  vi.stubGlobal('AudioContext', TestAudioContext);
+  vi.stubGlobal('requestAnimationFrame', vi.fn((callback: FrameRequestCallback) => { frames.push(callback); return frames.length; }));
+  vi.stubGlobal('cancelAnimationFrame', vi.fn());
+  const audio = { srcObject: null as MediaStream | null, play: vi.fn().mockResolvedValue(undefined), pause: vi.fn() };
+  return { audio, frames, close, resume };
+}
+
+afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('语音会话生命周期', () => {
   it('麦克风拒绝时不创建服务端会话，并释放客户端', async () => {
@@ -122,7 +148,7 @@ describe('语音会话生命周期', () => {
     old.onLocalAudioLevel?.(.9);
     old.onServerMessage?.({ type: 'transcript', entry: { role: 'assistant', text: '旧结果', timestamp: 'old', interrupted: false } });
     const lateTrack = { stop: vi.fn(), kind: 'audio' } as unknown as MediaStreamTrack;
-    old.onTrackStarted?.(lateTrack, { id: 'bot', name: 'bot', local: false });
+    old.onTrackStarted?.(lateTrack);
     expect(lateTrack.stop).toHaveBeenCalled();
     expect(test.controller.getSnapshot().state).toBe('listening');
     expect(test.controller.getSnapshot().localLevel).toBe(0);
@@ -178,6 +204,65 @@ describe('语音会话生命周期', () => {
     test.controller.toggleMute();
     expect(test.clients[0].client.enableMic).toHaveBeenLastCalledWith(true);
     expect(test.controller.getSnapshot().call?.settings).toEqual(fixtureSettings);
+    await test.controller.end();
+  });
+
+  it('SDK 无 participant 的远端音轨实际播放和反馈音量，挂断清理且旧采样不能复活', async () => {
+    const media = playback();
+    const test = setup();
+    test.controller.attachAudio(media.audio as unknown as HTMLAudioElement);
+    await test.controller.start();
+    const remote = { kind: 'audio', stop: vi.fn() } as unknown as MediaStreamTrack;
+    test.clients[0].callbacks.onTrackStarted?.(remote);
+    expect(media.audio.srcObject?.getAudioTracks()).toEqual([remote]);
+    expect(media.audio.play).toHaveBeenCalledTimes(1);
+    media.frames[0](0);
+    expect(test.controller.getSnapshot().remoteLevel).toBeCloseTo(.2);
+    const oldFrame = media.frames[0];
+    await test.controller.end();
+    expect(media.audio.pause).toHaveBeenCalledTimes(1);
+    expect(media.audio.srcObject).toBeNull();
+    expect(remote.stop).toHaveBeenCalled();
+    expect(media.close).toHaveBeenCalledTimes(1);
+    oldFrame(1);
+    expect(test.controller.getSnapshot().remoteLevel).toBe(0);
+    await test.controller.start();
+    oldFrame(2);
+    expect(media.audio.play).toHaveBeenCalledTimes(1);
+    expect(test.controller.getSnapshot().remoteLevel).toBe(0);
+    await test.controller.end();
+  });
+
+  it('本地轨道即使没有 participant 也不会回放，显式 local 标记同样排除', async () => {
+    const media = playback();
+    const test = setup();
+    test.controller.attachAudio(media.audio as unknown as HTMLAudioElement);
+    await test.controller.start();
+    const local = test.clients[0].client.tracks().local.audio!;
+    test.clients[0].callbacks.onTrackStarted?.(local);
+    const markedLocal = { kind: 'audio', stop: vi.fn() } as unknown as MediaStreamTrack;
+    test.clients[0].callbacks.onTrackStarted?.(markedLocal, { id: 'local', name: '', local: true });
+    expect(media.audio.srcObject).toBeNull();
+    expect(media.audio.play).not.toHaveBeenCalled();
+    expect(media.frames).toHaveLength(0);
+    await test.controller.end();
+    expect(markedLocal.stop).toHaveBeenCalled();
+  });
+
+  it('无 participant 远端轨播放被浏览器拒绝时显示恢复入口，点击后重试实际播放', async () => {
+    const media = playback();
+    media.audio.play.mockRejectedValueOnce(new DOMException('blocked', 'NotAllowedError'));
+    const test = setup();
+    test.controller.attachAudio(media.audio as unknown as HTMLAudioElement);
+    await test.controller.start();
+    const remote = { kind: 'audio', stop: vi.fn() } as unknown as MediaStreamTrack;
+    test.clients[0].callbacks.onTrackStarted?.(remote);
+    await vi.waitFor(() => expect(test.controller.getSnapshot().audioBlocked).toBe(true));
+    await test.controller.resumeAudio();
+    expect(media.audio.play).toHaveBeenCalledTimes(2);
+    expect(media.resume).toHaveBeenCalledTimes(2);
+    expect(test.controller.getSnapshot().audioBlocked).toBe(false);
+    expect(media.audio.srcObject?.getAudioTracks()).toEqual([remote]);
     await test.controller.end();
   });
 });

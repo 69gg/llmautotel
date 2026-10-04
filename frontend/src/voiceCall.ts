@@ -153,7 +153,8 @@ export class VoiceCallController {
       onTrackStarted: (track, participant) => {
         if (!current()) { track.stop(); return; }
         session.tracks.add(track);
-        if (track.kind === 'audio' && participant && !participant.local) {
+        // SmallWebRTC remote-track events omit participant; never play the local microphone.
+        if (track.kind === 'audio' && !participant?.local && track !== session.client.tracks().local.audio) {
           this.playTrack(track);
           this.monitorRemoteTrack(track, session);
         }

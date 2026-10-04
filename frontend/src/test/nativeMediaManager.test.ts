@@ -56,11 +56,13 @@ describe('本机媒体适配器', () => {
     const getUserMedia = vi.fn().mockResolvedValueOnce(first.stream).mockResolvedValueOnce(second.stream);
     devices(getUserMedia);
     const level = vi.fn();
+    const trackStarted = vi.fn();
     const manager = new NativeMediaManager();
-    manager.setClientOptions({ enableMic: true, callbacks: { onLocalAudioLevel: level } });
+    manager.setClientOptions({ enableMic: true, callbacks: { onLocalAudioLevel: level, onTrackStarted: trackStarted } });
     await manager.initialize();
     expect(getUserMedia).toHaveBeenCalledWith({ audio: { deviceId: undefined, echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
     expect(manager.tracks().local.audio).toBe(first.track);
+    expect(trackStarted).toHaveBeenCalledWith(first.track, { id: 'local', name: '', local: true });
     frames[0](0);
     expect(level).toHaveBeenLastCalledWith(expect.any(Number));
     const oldFrame = frames[0];
@@ -75,6 +77,7 @@ describe('本机媒体适配器', () => {
     expect(manager.tracks().local.audio).toBeUndefined();
     await manager.initialize();
     expect(manager.tracks().local.audio).toBe(second.track);
+    expect(trackStarted).toHaveBeenLastCalledWith(second.track, { id: 'local', name: '', local: true });
     level.mockClear();
     oldFrame(1);
     expect(level).not.toHaveBeenCalled();
