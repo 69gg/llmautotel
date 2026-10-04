@@ -47,6 +47,10 @@ class Store:
     async def save_settings(self, settings: AppSettings) -> AppSettings:
         # Calls are serialized by the API lock, so omitted credentials cannot race.
         current = await self.get_settings()
+        if "telephony" not in settings.model_fields_set:
+            settings.telephony = current.telephony.model_copy(deep=True)
+        else:
+            settings.telephony.preserve_secrets(current.telephony)
         for stage in ("asr", "llm", "tts"):
             incoming = getattr(settings, stage)
             if "api_key" not in incoming.model_fields_set:

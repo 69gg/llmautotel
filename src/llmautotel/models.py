@@ -5,6 +5,8 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationInfo, field_validator
 
+from llmautotel.telephony.settings import TelephonySettings
+
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -92,6 +94,7 @@ class AppSettings(StrictModel):
     llm: LLMSettings = Field(default_factory=LLMSettings)
     tts: TTSSettings = Field(default_factory=TTSSettings)
     voice: VoiceSettings = Field(default_factory=VoiceSettings)
+    telephony: TelephonySettings = Field(default_factory=TelephonySettings)
 
     def public(self) -> dict[str, Any]:
         result = self.model_dump(
@@ -102,6 +105,7 @@ class AppSettings(StrictModel):
             result[stage]["api_key_set"] = bool(
                 provider.api_key and provider.api_key.get_secret_value()
             )
+        result["telephony"] = self.telephony.public()
         return result
 
     def private(self) -> dict[str, Any]:
@@ -111,6 +115,7 @@ class AppSettings(StrictModel):
             result[stage]["api_key"] = (
                 provider.api_key.get_secret_value() if provider.api_key else None
             )
+        result["telephony"] = self.telephony.private()
         return result
 
     def missing_call_fields(self) -> list[str]:
@@ -145,3 +150,7 @@ class CallRecord(StrictModel):
     end_reason: str | None = None
     settings: dict[str, Any]
     transcript: list[TranscriptEntry] = Field(default_factory=list)
+    channel: Literal["browser", "telephone"] = "browser"
+    provider: Literal["asterisk", "freeswitch", "aliyun", "tencent"] | None = None
+    destination: str | None = None
+    state: str = "connecting"

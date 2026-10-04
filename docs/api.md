@@ -7,6 +7,7 @@
 | GET | `/health` | 返回 `{ "status": "ok" }` |
 | GET | `/settings` | 返回销售、模型与语音配置，模型含 `api_key_set`，不返回密钥 |
 | PUT | `/settings` | 保存完整配置，返回脱敏后的配置 |
+| GET | `/telephony/providers` | 外呼 provider 元数据及字段类型，不连接供应商 |
 | POST | `/calls` | 使用已保存配置开始一通会话，返回 `call` 和 SDK `connection` 参数 |
 | GET | `/calls/active` | 当前会话或 `null` |
 | GET | `/calls` | 文字历史摘要列表，按开始时间降序 |
@@ -33,3 +34,9 @@ API 根地址必须使用 HTTP / HTTPS、有效端口，不包含 URL 凭据、�
 会话状态为 `connecting`、`active`、`ended` 或 `failed`。历史详细记录包含 `id`、`started_at`、`ended_at`、`status`、`end_reason`、`settings`、`transcript`。文字项包含 `role`、`text`、`timestamp`、`interrupted`。中断项可能没有正文，表示正在播放的半句未计入已说内容；生成稿会以“未完整播放”的内部系统背景保留在本通模型上下文，不写为完整播放的历史正文。内部背景标签在 TTS 前过滤，不作为新的语音或文字输出。过去已经保存的记录保持原样。记录不含录音或密钥。
 
 未完成连接的预留槽位默认 30 秒后释放，可通过 `LLMAUTOTEL_CONNECTION_TIMEOUT_SECONDS` 配置。正常退出会结束活动会话；意外终止后再次启动会将未结束的历史标为 `failed` / `server_restarted`。
+
+## 电话 provider 配置
+
+`settings.telephony` 包含 `public_base_url` 和 `asterisk`、`freeswitch`、`aliyun`、`tencent` 四组独立配置。全部默认 `enabled=false`，旧数据库读取亦如此。读取或保存配置不会连接电话平台；只有启用并显式开始外呼才连接。密码、云凭据、模型网关 token、事件回调 token 回读均只提供 `字段名_set`。保存前排除这些只读标记；省略凭据保留原值，`null` 清除，省略整个 telephony 或 provider 保留已存配置。
+
+媒体模式沿用本机的 ASR／LLM／TTS；云模式使用平台托管 ASR／TTS 和本机 LLM 网关。字段由 `/telephony/providers` 返回的元数据描述，填写凭据和号码时不会把它们放入浏览器持久存储。Asterisk endpoint 模板仅允许 `PJSIP/` 前缀和一个 `{number}`，不接受格式说明、额外变量或换行。FreeSWITCH unicast 的远端地址要求 IPv4，并预留端口；云服务需要可访问的模型网关与事件回调。详细前置配置见 [电话 provider](telephony.md)。

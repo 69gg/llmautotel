@@ -18,6 +18,7 @@ from llmautotel.config import RuntimeConfig
 from llmautotel.models import AppSettings, CallRecord
 from llmautotel.sessions import SessionManager
 from llmautotel.store import Store
+from llmautotel.telephony.catalog import provider_catalog
 
 
 def create_app(runtime: RuntimeConfig | None = None) -> FastAPI:
@@ -60,6 +61,11 @@ def create_app(runtime: RuntimeConfig | None = None) -> FastAPI:
         async with request.app.state.settings_lock:
             saved = await request.app.state.store.save_settings(settings)
         return saved.public()
+
+    @app.get("/api/telephony/providers")
+    async def telephone_providers(request: Request) -> list[dict[str, Any]]:
+        settings = await request.app.state.store.get_settings()
+        return provider_catalog(settings.telephony)
 
     @app.post("/api/calls", status_code=201)
     async def start_call(request: Request) -> dict[str, Any]:

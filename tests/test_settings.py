@@ -25,6 +25,12 @@ def test_settings_persist_without_exposing_credentials(tmp_path: Path) -> None:
         public = result.json()
         for stage in ("asr", "llm", "tts"):
             public[stage].pop("api_key_set")
+        for provider in ("asterisk", "freeswitch", "aliyun", "tencent"):
+            public["telephony"][provider] = {
+                key: value
+                for key, value in public["telephony"][provider].items()
+                if not key.endswith("_set")
+            }
         assert client.put("/api/settings", json=public).status_code == 200
     with TestClient(create_app(runtime)) as client:
         saved = client.get("/api/settings").json()

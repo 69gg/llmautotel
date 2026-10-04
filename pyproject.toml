@@ -11,6 +11,10 @@ dependencies = [
   "httpx2>=2.13,<3",
   "openai==3.24.0",
   "loguru>=0.7,<1",
+  "websockets>=17.2,<18",
+  "alibabacloud-aiccs20191015==5.4.3",
+  "tencentcloud-sdk-python-ccc==3.1.177",
+  "tencentcloud-sdk-python-common[async]==3.1.185",
 ]
 
 [project.scripts]
