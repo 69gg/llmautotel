@@ -9,7 +9,7 @@ from typing import Any, Literal
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -19,6 +19,7 @@ from llmautotel.models import AppSettings, CallRecord
 from llmautotel.sessions import SessionManager
 from llmautotel.store import Store
 from llmautotel.telephony.catalog import provider_catalog
+from llmautotel.telephony.settings import TelephonyProviderName
 
 
 def create_app(runtime: RuntimeConfig | None = None) -> FastAPI:
@@ -71,6 +72,96 @@ def create_app(runtime: RuntimeConfig | None = None) -> FastAPI:
     async def start_call(request: Request) -> dict[str, Any]:
         return await request.app.state.sessions.start()
 
+    @app.post("/api/telephony/calls", status_code=201)
+    async def start_phone(body: PhoneRequest, request: Request) -> dict[str, Any]:
+        return await request.app.state.sessions.start_phone(body.provider, body.destination)
+
+    async def cloud_completion(
+        provider: Literal["aliyun", "tencent"],
+        body: dict[str, Any],
+        request: Request,
+    ) -> StreamingResponse:
+        from llmautotel.telephony.base import TelephonyError
+
+        voice = await request.app.state.sessions.phone_runtime(provider)
+        if not voice.authenticate(request.headers.get("authorization")):
+            raise HTTPException(401, "模型网关鉴权失败")
+        try:
+            voice.validate_gateway(body)
+        except TelephonyError as error:
+            raise HTTPException(422, str(error)) from None
+        return StreamingResponse(
+            voice.cloud_gateway(body),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+        )
+
+    @app.post("/api/telephony/aliyun/llm")
+    async def aliyun_llm(body: dict[str, Any], request: Request) -> StreamingResponse:
+        return await cloud_completion("aliyun", body, request)
+
+    @app.post("/api/telephony/tencent/llm/chat/completions")
+    async def tencent_llm(body: dict[str, Any], request: Request) -> StreamingResponse:
+        return await cloud_completion("tencent", body, request)
+
+    @app.post("/api/telephony/{provider}/events")
+    async def phone_events(
+        provider: Literal["aliyun", "tencent"],
+        request: Request,
+        body: dict[str, Any] | list[dict[str, Any]],
+        token: str | None = None,
+    ) -> dict[str, Any]:
+        from dataclasses import replace
+
+        from llmautotel.telephony.base import TelephonyError
+        from llmautotel.telephony.cloud import (
+            TencentCallClient,
+            authenticate_cloud_event,
+            parse_cloud_reports,
+        )
+
+        settings = await request.app.state.store.get_settings()
+        provider_config = getattr(settings.telephony, provider)
+        authorization = request.headers.get("authorization")
+        try:
+            voice = await request.app.state.sessions.phone_runtime(provider, allow_closing=True)
+        except HTTPException:
+            voice = None
+        authorized = (
+            voice.authenticate_event(token, authorization)
+            if voice is not None
+            else authenticate_cloud_event(provider_config, token, authorization)
+        )
+        if not authorized:
+            raise HTTPException(401, "电话回执鉴权失败")
+        consumed = await voice.handle_event(body) if voice is not None else False
+        for report in parse_cloud_reports(provider, body):
+            if consumed and report.remote_id == voice.remote_id:
+                continue
+            record = await request.app.state.store.get_phone_call(
+                provider,
+                report.local_id,
+                report.remote_id,
+            )
+            if record is None or record.ended_at is None:
+                continue
+            if provider == "tencent":
+                expected_app = record.settings["telephony"]["tencent"]["sdk_app_id"]
+                if not isinstance(body, dict) or body.get("SdkAppId") != expected_app:
+                    raise HTTPException(422, "电话回执应用标识不匹配")
+            if provider == "tencent" and provider_config.enabled:
+                client = TencentCallClient(provider_config)
+                try:
+                    report = replace(
+                        report, transcript=await client.fetch_transcript(report.remote_id)
+                    )
+                except TelephonyError:
+                    raise HTTPException(503, "云平台文字记录暂不可用，请重试回执") from None
+                finally:
+                    await client.close()
+            await request.app.state.sessions.update_cloud_history(provider, report)
+        return {"code": 0, "msg": "成功"} if provider == "aliyun" else {"ErrCode": 0, "ErrMsg": ""}
+
     @app.get("/api/calls/active")
     async def active_call(request: Request) -> CallRecord | None:
         return await request.app.state.sessions.active_record()
@@ -120,6 +211,11 @@ def run() -> None:
 
 class EndRequest(BaseModel):
     reason: Literal["user_hangup", "connection_lost"] = "user_hangup"
+
+
+class PhoneRequest(BaseModel):
+    provider: TelephonyProviderName
+    destination: str = Field(min_length=7, max_length=16, pattern=r"^\+?[0-9]{7,15}$")
 
 
 class OfferRequest(BaseModel):

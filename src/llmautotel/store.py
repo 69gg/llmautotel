@@ -104,6 +104,37 @@ class Store:
 
         return await asyncio.to_thread(read)
 
+    async def get_phone_call(
+        self,
+        provider: str,
+        local_id: str | None,
+        remote_id: str,
+    ) -> CallRecord | None:
+        """回执只能匹配已创建电话，不能借外部输入新建历史。"""
+
+        def read() -> CallRecord | None:
+            with self._connect() as connection:
+                if local_id:
+                    row = connection.execute(
+                        "SELECT body FROM calls WHERE id = ?", (local_id,)
+                    ).fetchone()
+                else:
+                    row = connection.execute(
+                        "SELECT body FROM calls WHERE json_extract(body, '$.remote_id') = ? "
+                        "AND json_extract(body, '$.provider') = ?",
+                        (remote_id, provider),
+                    ).fetchone()
+            if not row:
+                return None
+            record = CallRecord.model_validate_json(row[0])
+            if record.channel != "telephone" or record.provider != provider:
+                return None
+            if record.remote_id is not None and record.remote_id != remote_id:
+                return None
+            return record
+
+        return await asyncio.to_thread(read)
+
     async def delete_call(self, call_id: str) -> bool:
         def delete() -> bool:
             with self._connect() as connection:
@@ -122,6 +153,7 @@ class Store:
                     record = CallRecord.model_validate_json(body)
                     if record.ended_at is None:
                         record.status = "failed"
+                        record.state = "failed"
                         record.ended_at = datetime.now(UTC).isoformat()
                         record.end_reason = "server_restarted"
                         connection.execute(

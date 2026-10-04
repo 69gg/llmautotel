@@ -84,3 +84,7 @@ WAV multipart、独立接口路径和鉴权、SSE 文本、任意音色、分块
 - [MiMo ASR](https://mimo.mi.com/docs/zh-CN/quick-start/usage-guide/audio/Speech-Recognition)
 - [MiMo TTS](https://mimo.mi.com/docs/zh-CN/quick-start/usage-guide/audio/speech-synthesis-v2.5)
 - [DeepSeek 首次调用](https://api-docs.deepseek.com/zh-cn/)
+
+## 电话 provider 与模型 provider
+
+模型配置和电话线路配置独立。Asterisk／FreeSWITCH 的双向 PCM 使用本章同一组 ASR、文本模型和 TTS，MiMo／DeepSeek 等接入无需按线路重写；电话编解码与采样率转换由 PBX 和公共传输处理。阿里云／腾讯云首版托管语音只复用文本模型，不能据此声称三组本机语音服务均在云平台运行。云模型网关继续沿用当前 LLM 配置、零重试、思考开关及不设置 token 上限，平台提供的模型名和 system 提示不能覆盖本机快照。入口与认证见 [云电话 provider](telephony-cloud.md)。

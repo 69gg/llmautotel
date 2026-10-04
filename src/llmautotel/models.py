@@ -153,4 +153,5 @@ class CallRecord(StrictModel):
     channel: Literal["browser", "telephone"] = "browser"
     provider: Literal["asterisk", "freeswitch", "aliyun", "tencent"] | None = None
     destination: str | None = None
+    remote_id: str | None = None
     state: str = "connecting"

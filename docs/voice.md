@@ -51,3 +51,13 @@ Silero VAD 在本机 CPU 检测开口，默认连续语音 0.1 秒确认开始�
 `tests/test_hangup.py` 使用实际 LLM SDK 工具 SSE 与官方 TTS / 音频队列，覆盖工具请求参数、告别生成完但尚未输出完、合成等待与播放中插话、旧工具流迟到、无效证据、重复工具/标记、旧回合标记和 SQLite 收尾竞态。前端回归覆盖正常结束标记、保留播放直到服务器断连、资源释放、迟到消息隔离及历史结束原因。服务端输出队列完成不等于逐字设备播放确认，真实扬声器尾音仍需设备验收。
 
 相关依据：[Pipecat 打断机制](https://docs.pipecat.ai/pipecat/fundamentals/interruptions)、[会话初始化](https://docs.pipecat.ai/pipecat/learn/session-initialization)、[1.12.0 回合结束策略](https://github.com/pipecat-ai/pipecat/blob/v1.12.0/src/pipecat/turns/user_stop/speech_timeout_user_turn_stop_strategy.py)、[1.12.0 TTS 句级文本处理](https://github.com/pipecat-ai/pipecat/blob/v1.12.0/src/pipecat/services/tts_service.py)。
+
+## 电话传输复用
+
+`VoiceSession` 可注入电话 `BaseTransport`，网页模式继续使用 SmallWebRTC。电话媒体由公共 `PhoneTransport` 转入同一 Pipecat 管线，不复制销售提示词、VAD、模型、被打断背景或挂断控制器。input 采用官方低延迟流式重采样转换为 16 kHz，output 按 provider 采样率重采样并以 20 ms 节奏发送。只有被叫接听且媒体就绪的事件才能开启对话；不依赖浏览器 RTVI ready。
+
+电话输出在句级文字、回合结束、工具聚合和告别挂断检查点等待 driver 播放屏障。Asterisk 使用对应的媒体标记确认，FreeSWITCH 原生 UDP 只有末包时长与可配置尾部等待。插话取消当前音频并清空驱动队列／未发出块，检查点按回合隔离，旧确认不能让旧句子进入已播放上下文或触发挂断。手机端逐字播放不能从应用或 PBX 确认推断，仍须实体线路测量。
+
+阿里云／腾讯云是独立的托管语音运行时：平台执行 ASR、TTS、VAD 和媒体播放，本机仅提供遵循配置快照的模型网关。平台消息先去除外部 system 提示，再组装本机销售规则；被打断背景、当前问题投影、内部标签过滤及思考参数复用现有实现。生成文字只流给平台，最终历史以正式回执／官方交互记录为准。平台无法提供的实际播放进度或打断标记不由程序猜测，具体差异见 [云平台说明](telephony-cloud.md)。
+
+传输实现与锁定版本钩子见 [电话媒体管线](telephony-transport.md)。浏览器与电话由同一个 SessionManager 预留槽位；创建、模型、媒体、挂断或资源清理失败都会收尾并保存安全错误信息。配置更新只影响下一通。远端全断网时本机连接和任务可释放，但远端电话是否已挂断需在 PBX／平台确认。

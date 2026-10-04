@@ -1,6 +1,6 @@
 # LLMAutoTel
 
-本机网页语音销售助手。配置销售目标、产品资料、话术和独立的 ASR、文本 LLM、TTS 服务，通过浏览器与 AI 对话。
+可配置的语音销售工作台。配置销售目标、产品资料、话术和独立的 ASR、文本 LLM、TTS 服务，通过浏览器与 AI 对话；电话外呼提供四种可选 provider，全部默认关闭。
 
 ## 本机启动
 
@@ -40,6 +40,23 @@ uv run llmautotel
 地址填写接口根路径，应用会追加对应接口路径。TTS 音色允许服务商自定义名称，采样率必须与服务实际输出一致；WAV、MP3、Opus 不在第一版 TTS 兼容范围。未预填真实服务商、模型或密钥。详细请求与鉴权规则见 [模型接入文档](docs/providers.md)。
 小米 MiMo 可在 ASR / TTS 中分别选择“小米 MiMo”协议，使用 `/chat/completions` 传输 WAV Base64 和流式 PCM 音频。文本 LLM 支持可选思考模式和推理强度，不发送 token 上限。MiMo 与 DeepSeek 的具体配置见 [接入说明](docs/model-setup.md)。
 
+## 电话外呼
+
+进入“电话外呼”页面，选择方案、填写连接参数，显式启用并保存。保存配置不连接或拨号；选择已启用的 provider 并填写被叫号码，点击“发起外呼”才创建一通电话。PBX／云账号与电话线路应先由甲方开通，应用不自动注册中继或配置硬件。
+
+| Provider | 语音模型 | 接入准备 |
+| --- | --- | --- |
+| Asterisk | 本机已配置 ASR／LLM／TTS | [ARI＋双向 PCM WebSocket](docs/telephony-asterisk.md) |
+| FreeSWITCH | 本机已配置 ASR／LLM／TTS | [ESL＋原生双向 UDP PCM](docs/telephony-freeswitch.md) |
+| 阿里云 AICCS | 平台 ASR／TTS，本机 LLM 网关 | [LlmSmartCall 与 MSML](docs/telephony-cloud.md) |
+| 腾讯云 TCCC | 平台 ASR／TTS，本机 LLM 网关 | [CreateAICall 与自有模型接口](docs/telephony-cloud.md) |
+
+运营商 SIP 中继、FXO、E1/PRI 和 VoLTE SIM 语音网关，通过 Asterisk 或 FreeSWITCH 的 SIP 路由复用同一 provider，无需针对硬件品牌改应用代码。接口边界与未纳入方案见 [电话接入总览](docs/telephony.md)。被叫号码接受 7–15 位数字及可选开头加号，号码与中继路由由甲方决定。
+
+电话和网页语音共用单会话限制、销售目标和配置快照。电话页提供状态、文字、手动挂断和历史；不使用浏览器麦克风。离开页面不挂断远端通话。Asterisk／FreeSWITCH 接听且媒体就绪后才主动开场，沿用直接推销、一次挽留、最新发言优先及告别后挂断规则。云托管模式的打断、播放和结束由平台执行；文字从正式回执／官方交互记录导入，不把模型生成稿冒充已经说过。
+
+云平台需要可访问的 HTTPS 模型网关和电话回执地址。公网反向代理只开放文档列出的这几个认证入口；本机配置、历史和外呼管理接口留在管理网。详细地址、鉴权、平台准备步骤及播放确认限制见各 provider 文档。实际线路与云应用尚未接通验收，协议测试不代表真实手机播放效果已验证。
+
 ## 数据与通话记录
 
 SQLite 默认保存在 `data/app.sqlite3`，目录权限 `0700`、文件权限 `0600`，已排除出 Git。配置中的密钥保存在服务端，配置回读只返回是否已设置；网页不把密钥写入持久存储。留空密钥输入表示保留原值，点击清除则删除已有密钥。
@@ -50,9 +67,9 @@ SQLite 默认保存在 `data/app.sqlite3`，目录权限 `0700`、文件权限 `
 
 打断后没有 AI 生成文字可作背景时，连续的用户发言在模型请求中明确分为历史背景与当前问题，避免模型先补答旧问题。原始用户发言和文字记录保持完整；完整助手回复及内部系统背景按原顺序保留。
 
-用户挂断或断连会取消模型任务、停止音频并释放连接和麦克风。AI 挂断等待告别音频完成，再优雅结束；记录原因为 `ai_hangup`，历史页显示“AI 确认结束”。连接未完成的预留会话默认 30 秒后释放。正常退出保存 `server_shutdown` 原因；进程意外终止后重启，将未结束记录标记为 `server_restarted`。删除记录不可通过应用恢复。
+网页语音中，用户挂断或断连会取消模型任务、停止音频并释放连接和麦克风。AI 挂断等待告别音频完成，再优雅结束；记录原因为 `ai_hangup`，历史页显示“AI 确认结束”。网页语音连接未完成的预留会话默认 30 秒后释放；电话按各 provider 的拨号、媒体或回执超时收尾，播放确认范围见对应接入文档。正常退出保存 `server_shutdown` 原因；进程意外终止后重启，将未结束记录标记为 `server_restarted`。删除记录不可通过应用恢复。
 
-本阶段面向本机单用户，未提供账号系统；默认保持本机监听。没有电话线路、支付、知识库或外部音视频平台。浏览器运行时连接本机后端，后端按配置访问三个模型服务；首次安装依赖需访问包仓库。
+本阶段面向本机单用户，未提供账号系统；默认保持本机监听。电话 provider 默认关闭，保留网页语音的本机运行方式；没有支付或知识库。浏览器运行时连接本机后端，后端按配置访问模型服务。启用外呼并显式开始时，后端才连接所选 PBX 或云电话平台；首次安装依赖需访问包仓库。
 
 ## 开发环境
 
@@ -66,7 +83,7 @@ pnpm dev
 
 前端开发服务器代理 `/api` 到本机后端。后端环境变量见 [.env.example](.env.example)，程序不自动加载该文件。可通过 `LLMAUTOTEL_HOST`、`LLMAUTOTEL_PORT`、`LLMAUTOTEL_DATA_DIR` 和 `LLMAUTOTEL_CONNECTION_TIMEOUT_SECONDS` 调整运行配置。前端代理与 REST 超时见 [前端说明](frontend/README.md)。模型参数在网页填写。
 
-语音业务位于 `src/llmautotel/voice.py`，生成背景保留位于 `conversation.py`，内部标记过滤位于 `speech.py`，挽留与挂断工具位于 `hangup.py`，连接和会话管理位于 `sessions.py`，三个模型协议适配位于 `providers.py`。升级 Pipecat 前需核对锁定版本的句级音频和回合结束钩子；原因见 [语音管线文档](docs/voice.md)。
+语音业务位于 `src/llmautotel/voice.py`，生成背景保留位于 `conversation.py`，内部标记过滤位于 `speech.py`，挽留与挂断工具位于 `hangup.py`，连接和会话管理位于 `sessions.py`，三个模型协议适配位于 `providers.py`，电话 provider 和模型网关位于 `telephony/`。升级 Pipecat 前需核对锁定版本的句级音频和回合结束钩子；原因见 [语音管线文档](docs/voice.md)。
 
 ## 验证
 

@@ -1,4 +1,6 @@
-# 第一阶段验收记录
+# 验收记录
+
+## 第一阶段：本机网页语音
 
 验收日期：2026-10-04。本阶段为本机网页语音对话，未连接自动外呼线路。通用接口完成后，按用户指定配置了 MiMo ASR / TTS 与 DeepSeek 文本模型，并完成真实 API 连通性验证；下表区分自动化证据、真实接口和真实设备体验。
 
@@ -35,7 +37,7 @@ pnpm --dir frontend test
 pnpm --dir frontend build
 ```
 
-最新全量后端 **188 项通过**，Ruff 通过。背景模块提交时后端为 117 项；新增挂断工具、真实传输和迟到 VAD 竞争回归后为 143 项；内部标签过滤、请求投影与一次挽留完成后为 182 项；再增加三种配置目标、固定/生成开场的 6 项实际 SDK 请求回归。全量验证后将通用意向问句明确为“考虑 + 配置目标行动 + 吗？”结构，普通回复及挽留的三个相关文件再次 **52 项通过**。前端程序本次没有修改，沿用最近一次 **6 个文件、43 项通过**、TypeScript 检查与 Vite 生产构建通过的结果，没有重复运行。框架会提示 Python `audioop`、旧 TTS 基类及上下文 system 消息弃用；项目锁定 Python 3.12 / Pipecat 1.12.0，当前不影响通过结果。前端生产构建的大包提示属于体积建议，不是构建失败。
+第一阶段完成时，全量后端 **188 项通过**，Ruff 通过。背景模块提交时后端为 117 项；新增挂断工具、真实传输和迟到 VAD 竞争回归后为 143 项；内部标签过滤、请求投影与一次挽留完成后为 182 项；再增加三种配置目标、固定/生成开场的 6 项实际 SDK 请求回归。全量验证后将通用意向问句明确为“考虑 + 配置目标行动 + 吗？”结构，普通回复及挽留的三个相关文件再次 **52 项通过**。该次前端程序没有修改，沿用最近一次 **6 个文件、43 项通过**、TypeScript 检查与 Vite 生产构建通过的结果，没有重复运行。框架会提示 Python `audioop`、旧 TTS 基类及上下文 system 消息弃用；项目锁定 Python 3.12 / Pipecat 1.12.0，当前不影响通过结果。前端生产构建的大包提示属于体积建议，不是构建失败。
 
 开场音轨回归先在原实现运行：两个播放相关测试失败，分别复现未挂载远端音轨和未出现自动播放受限提示；调整音轨判断后，针对性前端测试 **17 项通过**，完整前端测试 **39 项通过**，独立 TypeScript 检查和生产构建通过。
 
@@ -123,3 +125,48 @@ pnpm --dir frontend build
 | 设备释放 | 通话挂断、断连、模型失败后检查浏览器麦克风指示关闭；随后立即开始新通话 | 自动化音轨释放已测，真实设备未测 |
 
 正文记录采用句级提交，打断时的半句不计入已经说过的内容，保留“播放未完成”标记；已生成的半句另以未完整播放标签保留为模型背景，不承诺逐字播放对齐。原始 PCM 无采样率/声道元数据，真实服务的格式与配置仍需根据其文档确认。
+
+## 第二阶段：可配置的电话 provider
+
+验收日期：2026-10-05。实现 Asterisk、FreeSWITCH、阿里云 AICCS 和腾讯云 TCCC 四个 provider，默认全部关闭。配置页按服务端元数据展示参数，保存配置不会拨号；只有启用、保存并手动开始电话后才发起外呼。电话与浏览器语音共享一个通话槽位和文字历史，每通使用开始时的配置快照。
+
+Asterisk 和 FreeSWITCH 复用本机 ASR、LLM、TTS、VAD、一次挽留控制与挂断工具；云 provider 由平台处理语音，本机提供文本模型网关和销售提示词。云模式的挽留规则由提示词与平台原生工具执行，没有本机 `retain_once` 硬状态校验。具体前置条件和配置步骤见[电话接入总览](telephony.md)、[Asterisk](telephony-asterisk.md)、[FreeSWITCH](telephony-freeswitch.md)和[云平台](telephony-cloud.md)。
+
+### 自动化验证
+
+| 范围 | 已验证行为 | 证据 |
+| --- | --- | --- |
+| 默认关闭与持久化 | 四组参数独立、密钥去敏与保留/清除、旧配置兼容、禁用不构造或启动外呼、每通快照 | `tests/test_telephony_settings.py`、`tests/test_telephony_routes.py`、`tests/test_telephony_sessions.py` |
+| Asterisk 协议 | ARI 地址、BasicAuth、通道/桥接/ExternalMedia 请求，实际 WebSocket 升级与子协议，双向 PCM、流控、播放标记及打断清队列 | `tests/test_telephony_asterisk.py` |
+| Asterisk 创建中清理 | 已被服务端接受的创建请求迟到成功时，先等待结果再删除固定资源；挂断和取消不重复拨号、不提前释放本机槽位 | `tests/test_telephony_asterisk.py`、`tests/test_telephony_cleanup_review.py` |
+| FreeSWITCH 协议 | 实际 loopback TCP ESL 和 UDP 音频、鉴权、事件订阅、originate/answer/unicast、输入来源校验、PCM16 与输入采样率 | `tests/test_telephony_freeswitch.py` |
+| FreeSWITCH 创建中清理 | 已接受的后台 originate 尚未创建通道时保留事件读取，迟到创建后只清理原 UUID；失败预算与重复清理 | `tests/test_telephony_freeswitch.py` |
+| 电话语音管线 | 开场、重采样、20 ms 输出节奏、尾部短音频、句子与告别播放检查点、打断后代次隔离、旧播放回执不能恢复输出、资源释放 | `tests/test_telephony_transport.py`及原有语音/挂断测试 |
+| 阿里云控制与报告 | 官方 SDK 签名/序列化、LlmSmartCall 参数、立即挂断、网关关联、MSML 与被打断背景转换、最终报告及未接通终态 | `tests/test_telephony_cloud.py`、`tests/test_telephony_gateway_api.py` |
+| 腾讯云控制与报告 | 官方 SDK 签名/序列化、CreateAICall 参数、原生工具透传、HangUpCall、CDR 认证、交互文字查询、失败重试与迟到历史补充 | `tests/test_telephony_cloud.py`、`tests/test_telephony_gateway_api.py`、`tests/test_telephony_routes.py` |
+| 模型网关 | 实际 LLM SDK 请求、快照与参数约束、内部标签过滤、旧流取消、暂停的旧状态回调及延迟消费的旧响应不能发送文字或取消新请求 | `tests/test_telephony_gateway.py`、`tests/test_telephony_gateway_api.py` |
+| 会话生命周期 | 浏览器与电话竞争、立即挂断、结束请求取消、清理完成前保持占用、结束后重拨、云报告批量处理/去重、禁用后的迟到回执 | `tests/test_telephony_sessions.py`、`tests/test_telephony_routes.py`、`tests/test_telephony_cleanup_review.py` |
+| 电话工作台 | 配置表单、保存独立开关与密钥、默认禁用开始、开始/挂断、状态轮询、切页取消轮询、旧回调隔离、历史来源和号码 | `frontend/src/test/telephone.test.tsx`及现有前端回归 |
+
+本轮重新运行全部后端和前端测试，包括第一阶段回归：后端 **318 项通过**，前端 **7 个文件、56 项通过**；Ruff 检查通过，电话相关 Python 文件格式检查通过，TypeScript 检查与 Vite 生产构建通过。运行命令与第一阶段相同，并增加电话相关文件的 `ruff format --check`。Python 和 SDK 的弃用提示、前端构建的大包提示未导致失败。
+
+原生协议测试使用真实 loopback TCP、UDP、WebSocket 连接，ARI HTTP 和云 API 使用受控 HTTP 响应；云控制测试执行官方 SDK 签名，请求中的号码与凭据均为测试占位值。测试没有接入实体 PBX、云账户或运营商线路，没有真实外呼。
+
+### 浏览器检查
+
+使用独立临时数据目录和本机 `127.0.0.1:8766` 服务检查实际生产构建。电话页四个 provider 默认关闭，开始按钮禁用；切换 FreeSWITCH、腾讯配置时显示对应参数。桌面布局和 390 × 844 窄屏均可使用，窄屏可用内容宽度与滚动宽度均为 375 px，无横向溢出；临时视口覆盖已恢复。检查没有保存配置、启用 provider、输入真实密钥或号码、获取麦克风或拨号，也没有修改原有本机数据。
+
+### 真实电话接入：待验收
+
+| 场景 | 当前范围与限制 |
+| --- | --- |
+| Asterisk 与 SIP 线路 | 需符合文档版本的 ARI/双向 PCM WebSocket、已配置 SIP trunk 和授权主叫；协议已自动化验证，实体 PBX 与真实接听未验证 |
+| FreeSWITCH 与 SIP 线路 | 需 ESL、原生 unicast 和可用 SIP gateway；没有手机端播放 ACK，播放等待采用末包时长与可配置尾部延迟，需真实线路核对 |
+| FXO、E1/PRI、VoLTE SIM 网关 | 经标准 SIP 接上述 PBX；未按设备品牌另建 provider，未接实体硬件 |
+| 阿里云 AICCS | 需账户号码/应用/网关/回执配置；正式 MSML 协议已接入，真实语音、打断与告别播放后挂断未验证 |
+| 腾讯云 TCCC | 需账户、授权号码与套餐、网关和 CDR；原生 `call_end` 告别播放及插话取消尚未通过真实线路验证，不宣称与本机播放屏障等价 |
+| 云文字与打断标记 | 以平台正式报告/交互流为准，通话期间可能没有完整文字；腾讯 `CanBeInterrupted` 不能证明发生打断，当前不保证逐句打断标记 |
+| 一次挽留与销售体验 | 本机媒体模式已有工具状态回归；云模式需验证提示词及平台工具的实际行为，不保证精确的一次挽留硬预算 |
+| 回声、停音及回答延迟 | 手机/固话、耳机/外放、不同线路与网络均未测量；不能宣称达到 500 ms 内停音目标 |
+
+本轮交付的是已实现并通过协议及生命周期测试的可配置适配器。实际使用仍需甲方所选平台、线路与账户完成配置，并按上表进行真实电话验收。
