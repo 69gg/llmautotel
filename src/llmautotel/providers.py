@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import base64
 from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
+from contextlib import aclosing
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -82,12 +84,14 @@ class CompatibleSTTService(OpenAISTTService):
         self, settings: ASRSettings, *, http_client: httpx2.AsyncClient | None = None
     ) -> None:
         client = http_client or _sdk_http_client(settings)
+        self._provider_settings = settings.model_copy(deep=True)
         super().__init__(
             api_key=_sdk_key(settings),
             base_url=settings.base_url,
             http_client=client,
             settings=OpenAISTTService.Settings(
-                model=settings.model, language=Language(settings.language)
+                model=settings.model,
+                language=Language(settings.language) if settings.language != "auto" else None,
             ),
             sample_rate=16000,
             push_empty_transcripts=True,
@@ -103,6 +107,28 @@ class CompatibleSTTService(OpenAISTTService):
 
     async def _transcribe(self, audio: bytes) -> Transcription:
         try:
+            if self._provider_settings.protocol == "mimo":
+                encoded = base64.b64encode(audio).decode("ascii")
+                # MiMo 的限制针对编码后的输入，不将超大片段发送给服务端。
+                if len(encoded) > 10 * 1024 * 1024:
+                    raise ValueError("ASR audio exceeds the protocol limit")
+                completion = await self._client.chat.completions.create(
+                    model=self._provider_settings.model,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "input_audio",
+                                    "input_audio": {"data": f"data:audio/wav;base64,{encoded}"},
+                                }
+                            ],
+                        }
+                    ],
+                    extra_body={"asr_options": {"language": self._provider_settings.language}},
+                    stream=False,
+                )
+                return Transcription(text=completion.choices[0].message.content or "")
             return await super()._transcribe(audio)
         except Exception as error:
             raise ProviderFailure("asr", error) from None
@@ -134,10 +160,15 @@ class CompatibleLLMService(OpenAILLMService):
     ) -> None:
         self._provider_http_client = http_client or _sdk_http_client(settings)
         self._provider_timeout = settings.timeout_seconds
+        extra: dict[str, Any] = {}
+        if settings.reasoning_effort is not None:
+            extra["reasoning_effort"] = settings.reasoning_effort
+        if settings.thinking is not None:
+            extra["extra_body"] = {"thinking": {"type": settings.thinking}}
         super().__init__(
             api_key=_sdk_key(settings),
             base_url=settings.base_url,
-            settings=OpenAILLMService.Settings(model=settings.model),
+            settings=OpenAILLMService.Settings(model=settings.model, extra=extra),
             retry_on_timeout=False,
         )
 
@@ -189,7 +220,11 @@ class CompatibleTTSService(TTSService):
     """Thin PCM adapter allowing provider-specific voice identifiers."""
 
     def __init__(
-        self, settings: TTSSettings, *, http_client: httpx.AsyncClient | None = None
+        self,
+        settings: TTSSettings,
+        *,
+        http_client: httpx.AsyncClient | None = None,
+        mimo_http_client: httpx2.AsyncClient | None = None,
     ) -> None:
         super().__init__(
             settings=PipecatTTSSettings(
@@ -201,7 +236,22 @@ class CompatibleTTSService(TTSService):
             reuse_context_id_within_turn=False,
         )
         self._provider_settings = settings.model_copy(deep=True)
-        self._http_client = http_client or httpx.AsyncClient(timeout=settings.timeout_seconds)
+        self._http_client = (
+            http_client or httpx.AsyncClient(timeout=settings.timeout_seconds)
+            if settings.protocol == "openai"
+            else None
+        )
+        self._mimo_client = (
+            _CompatibleOpenAIClient(
+                api_key=_sdk_key(settings),
+                base_url=settings.base_url,
+                http_client=mimo_http_client or _sdk_http_client(settings),
+                max_retries=0,
+                timeout=settings.timeout_seconds,
+            )
+            if settings.protocol == "mimo"
+            else None
+        )
         self._endpoint = f"{settings.base_url.rstrip('/')}/audio/speech"
 
     async def _push_tts_frames(
@@ -224,7 +274,30 @@ class CompatibleTTSService(TTSService):
             await self.append_to_audio_context(context_id, TTSStoppedFrame(context_id=context_id))
             await self.remove_audio_context(context_id)
 
-    async def run_tts(self, text: str, context_id: str) -> AsyncGenerator[Frame, None]:
+    async def _audio_chunks(self, text: str) -> AsyncGenerator[bytes, None]:
+        if self._mimo_client is not None:
+            async with await self._mimo_client.chat.completions.create(
+                model=self._provider_settings.model,
+                messages=[{"role": "assistant", "content": text}],
+                audio={"format": "pcm16", "voice": self._provider_settings.voice},
+                stream=True,
+            ) as stream:
+                async for chunk in stream:
+                    if not chunk.choices:
+                        continue
+                    audio = getattr(chunk.choices[0].delta, "audio", None)
+                    if audio is None:
+                        continue
+                    if not isinstance(audio, dict):
+                        raise ValueError("Invalid audio delta")
+                    encoded = audio.get("data")
+                    if encoded is None:
+                        continue
+                    if not isinstance(encoded, str):
+                        raise ValueError("Invalid audio data")
+                    yield base64.b64decode(encoded, validate=True)
+            return
+        assert self._http_client is not None
         headers = (
             {"Authorization": f"Bearer {_key(self._provider_settings)}"}
             if _key(self._provider_settings)
@@ -236,28 +309,30 @@ class CompatibleTTSService(TTSService):
             "voice": self._provider_settings.voice,
             "response_format": "pcm",
         }
+        async with self._http_client.stream(
+            "POST", self._endpoint, headers=headers, json=payload,
+            timeout=self._provider_settings.timeout_seconds,
+        ) as response:
+            response.raise_for_status()
+            media_type = response.headers.get("content-type", "").split(";", 1)[0].lower().strip()
+            if media_type not in {"", "application/octet-stream", "audio/pcm", "audio/raw"}:
+                raise ValueError("服务返回的音频格式不是原始 PCM")
+            async for chunk in response.aiter_bytes():
+                yield chunk
+
+    async def run_tts(self, text: str, context_id: str) -> AsyncGenerator[Frame, None]:
         try:
-            async with self._http_client.stream(
-                "POST",
-                self._endpoint,
-                headers=headers,
-                json=payload,
-                timeout=self._provider_settings.timeout_seconds,
-            ) as response:
-                response.raise_for_status()
-                media_type = (
-                    response.headers.get("content-type", "").split(";", 1)[0].lower().strip()
-                )
-                if media_type not in {"", "application/octet-stream", "audio/pcm", "audio/raw"}:
-                    yield ErrorFrame(error="tts: 服务返回的音频格式不是原始 PCM")
-                    return
+            # aclosing 保证消费者在 yield 处取消时也立即关闭 SDK / HTTP 音频流。
+            async with aclosing(self._audio_chunks(text)) as chunks:
                 remainder = b""
-                async for chunk in response.aiter_bytes():
+                emitted = False
+                async for chunk in chunks:
                     # HTTP chunks can cut a 16-bit sample in half. Keep that byte
                     # for the next chunk instead of emitting malformed audio.
                     remainder += chunk
                     aligned = len(remainder) & ~1
                     if aligned:
+                        emitted = True
                         yield TTSAudioRawFrame(
                             audio=remainder[:aligned],
                             sample_rate=self._provider_settings.sample_rate,
@@ -267,11 +342,16 @@ class CompatibleTTSService(TTSService):
                         remainder = remainder[aligned:]
                 if remainder:
                     yield ErrorFrame(error="tts: PCM 音频末尾存在不完整的 16 位采样")
+                elif not emitted:
+                    yield ErrorFrame(error="tts: 服务未返回 PCM 音频")
         except Exception as error:
             yield ErrorFrame(error=str(ProviderFailure("tts", error)))
 
     async def aclose(self) -> None:
-        await self._http_client.aclose()
+        if self._http_client is not None:
+            await self._http_client.aclose()
+        if self._mimo_client is not None:
+            await self._mimo_client.close()
 
     async def cleanup(self) -> None:
         try:

@@ -23,7 +23,7 @@ export function SettingsPage({ settings, onSave }: { settings: Settings; onSave:
     setMessage('');
   }
 
-  function updateProvider(name: ProviderName, key: string, value: string | number) {
+  function updateProvider(name: ProviderName, key: string, value: string | number | null) {
     setDraft(current => ({ ...current, [name]: { ...current[name], [key]: value } }));
     setDirty(true);
     setMessage('');
@@ -67,9 +67,11 @@ export function SettingsPage({ settings, onSave }: { settings: Settings; onSave:
       <div className="section-heading"><span className="section-index">02</span><div><h2 id="models-heading">模型连接</h2><p>三个模型可以使用不同的服务商。</p></div></div>
       <div className="form-content">
         {providers.map(({ name, title, description, label }) => <fieldset className="provider-section" key={name}><legend><span className="provider-label">{label}</span><span>{title}</span><small>{description}</small></legend>
+          {name !== 'llm' && <label className="field protocol-field"><span>接口协议</span><select aria-label={`${title}接口协议`} value={draft[name].protocol ?? 'openai'} onChange={event => updateProvider(name, 'protocol', event.target.value)}><option value="openai">OpenAI 兼容</option><option value="mimo">小米 MiMo</option></select></label>}
           <div className="field-pair"><label className="field"><span>API 地址</span><input type="url" aria-label={`${title} API 地址`} value={draft[name].base_url} onChange={event => updateProvider(name, 'base_url', event.target.value)} placeholder="服务商提供的兼容 API 基础地址" /></label><label className="field"><span>模型名称</span><input aria-label={`${title}模型名称`} value={draft[name].model} onChange={event => updateProvider(name, 'model', event.target.value)} placeholder="填写服务商提供的模型名称" /></label></div>
           <div className="secret-line"><label className="field secret-field"><span>API 密钥 <em>{secrets[name] === null ? '保存后清除' : draft[name].api_key_set ? '已设置' : '未设置'}</em></span><input type="password" autoComplete="off" aria-label={`${title} API 密钥`} value={secrets[name] ?? ''} onChange={event => updateSecret(name, event.target.value)} placeholder={draft[name].api_key_set ? '留空保留现有密钥' : '按服务商要求填写'} /></label>{(draft[name].api_key_set || secrets[name]) && <button type="button" className="text-button clear-key" onClick={() => updateSecret(name, null)} aria-label={`清除${title}密钥`}>清除密钥</button>}{secrets[name] === null && <button type="button" className="text-button clear-key" onClick={() => updateSecret(name, '')}>撤销清除</button>}</div>
           {name === 'asr' && <label className="field narrow-field"><span>识别语言</span><input value={draft.asr.language} onChange={event => updateProvider('asr', 'language', event.target.value)} aria-label="识别语言" /></label>}
+          {name === 'llm' && <div className="field-pair"><label className="field"><span>思考模式</span><select aria-label="思考模式" value={draft.llm.thinking ?? ''} onChange={event => updateProvider('llm', 'thinking', event.target.value || null)}><option value="">服务默认</option><option value="enabled">启用思考</option><option value="disabled">关闭思考</option></select><small>服务默认不向模型发送思考开关。</small></label><label className="field"><span>推理强度</span><select aria-label="推理强度" value={draft.llm.reasoning_effort ?? ''} onChange={event => updateProvider('llm', 'reasoning_effort', event.target.value || null)}><option value="">服务默认</option><option value="none">无</option><option value="low">低</option><option value="medium">中</option><option value="high">高</option><option value="max">最高</option></select><small>仅在模型支持时设置。</small></label></div>}
           {name === 'tts' && <div className="field-pair"><label className="field"><span>音色名称</span><input value={draft.tts.voice} onChange={event => updateProvider('tts', 'voice', event.target.value)} placeholder="服务商提供的音色名称" /></label><label className="field"><span>PCM 采样率 <em>Hz</em></span><input type="number" min={8000} max={96000} value={draft.tts.sample_rate} onChange={event => updateProvider('tts', 'sample_rate', Number(event.target.value))} /><small>使用服务商实际输出的采样率。</small></label></div>}
         </fieldset>)}
         <p className="privacy-note">密钥仅保存在本机服务端，保存后不再显示。</p>

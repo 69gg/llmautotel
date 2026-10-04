@@ -3,7 +3,7 @@
 from typing import Any, Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationInfo, field_validator
 
 
 class StrictModel(BaseModel):
@@ -42,14 +42,19 @@ class ProviderSettings(StrictModel):
 
 
 class ASRSettings(ProviderSettings):
+    protocol: Literal["openai", "mimo"] = "openai"
     language: str = "zh"
 
     @field_validator("language")
     @classmethod
-    def validate_language(cls, value: str) -> str:
+    def validate_language(cls, value: str, info: ValidationInfo) -> str:
         from pipecat.transcriptions.language import Language
 
         value = value.strip()
+        if info.data.get("protocol") == "mimo":
+            if value not in {"auto", "zh", "en"}:
+                raise ValueError("MiMo 识别语言须为 auto、zh 或 en")
+            return value
         try:
             Language(value)
         except ValueError:
@@ -58,12 +63,21 @@ class ASRSettings(ProviderSettings):
 
 
 class LLMSettings(ProviderSettings):
-    pass
+    thinking: Literal["enabled", "disabled"] | None = None
+    reasoning_effort: Literal["none", "low", "medium", "high", "max"] | None = None
 
 
 class TTSSettings(ProviderSettings):
+    protocol: Literal["openai", "mimo"] = "openai"
     voice: str = ""
     sample_rate: int = Field(default=24000, ge=8000, le=96000)
+
+    @field_validator("sample_rate")
+    @classmethod
+    def validate_sample_rate(cls, value: int, info: ValidationInfo) -> int:
+        if info.data.get("protocol") == "mimo" and value != 24000:
+            raise ValueError("MiMo PCM 输出采样率须为 24000 Hz")
+        return value
 
 
 class VoiceSettings(StrictModel):

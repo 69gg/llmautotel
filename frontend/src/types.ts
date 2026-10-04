@@ -1,4 +1,7 @@
 export type ProviderName = 'asr' | 'llm' | 'tts';
+export type AudioProtocol = 'openai' | 'mimo';
+export type ThinkingMode = 'enabled' | 'disabled';
+export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'max';
 
 export interface ProviderSettings {
   base_url: string;
@@ -9,9 +12,9 @@ export interface ProviderSettings {
 
 export interface Settings {
   sales: { goal: string; product_info: string; instructions: string; opening: string };
-  asr: ProviderSettings & { language: string };
-  llm: ProviderSettings;
-  tts: ProviderSettings & { voice: string; sample_rate: number };
+  asr: ProviderSettings & { protocol: AudioProtocol; language: string };
+  llm: ProviderSettings & { thinking: ThinkingMode | null; reasoning_effort: ReasoningEffort | null };
+  tts: ProviderSettings & { protocol: AudioProtocol; voice: string; sample_rate: number };
   voice: { vad_start_seconds: number; vad_stop_seconds: number; vad_confidence: number };
 }
 

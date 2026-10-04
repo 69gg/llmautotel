@@ -36,6 +36,7 @@ uv run llmautotel
 | TTS | `/audio/speech` | 原始单声道、16 位小端 PCM，默认采样率 24 kHz |
 
 地址填写接口根路径，应用会追加对应接口路径。TTS 音色允许服务商自定义名称，采样率必须与服务实际输出一致；WAV、MP3、Opus 不在第一版 TTS 兼容范围。未预填真实服务商、模型或密钥。详细请求与鉴权规则见 [模型接入文档](docs/providers.md)。
+小米 MiMo 可在 ASR / TTS 中分别选择“小米 MiMo”协议，使用 `/chat/completions` 传输 WAV Base64 和流式 PCM 音频。文本 LLM 支持可选思考模式和推理强度，不发送 token 上限。MiMo 与 DeepSeek 的具体配置见 [接入说明](docs/model-setup.md)。
 
 ## 数据与通话记录
 
