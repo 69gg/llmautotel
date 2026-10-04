@@ -50,3 +50,27 @@ input, textarea, select { width: 100%; outline: none; border: 1px solid #dce1d5;
 @media (max-width: 560px) { .sidebar { padding: 17px 18px; }.brand { font-size: 18px; gap: 8px; }.brand-symbol { transform: scale(.8); }.nav-item { padding: 9px; }.nav-item span { display: none; }.main-content, .topbar, .workspace-footer { padding-inline: 22px; }.page-heading { align-items: flex-start; }.page-heading h1 { font-size: 25px; }.save-top { display: none; }.field-pair { grid-template-columns: 1fr; gap: 0; }.form-content { padding-left: 0; }.provider-section legend small { display: none; }.config-section { padding-bottom: 20px; }.save-bar { align-items: flex-start; }.save-bar > div { padding-top: 9px; max-width: 200px; }.secret-line { gap: 10px; }.button { padding: 11px 15px; }.empty-state { min-height: 60dvh; }.call-page .page-heading { flex-wrap: wrap; }.call-page .page-heading > .button { padding: 8px 13px; }.call-layout { grid-template-columns: 1fr; }.call-surface { border-right: 0; border-bottom: 1px solid var(--border); min-height: 500px; }.conversation-panel { min-height: 280px; }.conversation-scroll { max-height: 350px; }.transcript-empty { min-height: 210px; }.call-goal { flex-wrap: wrap; gap: 8px 15px; }.call-goal small { flex-basis: 100%; padding-left: 60px; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
 @media (max-width: 560px) { .history-page .page-heading { flex-wrap: wrap; }.history-page .page-heading > .button { padding: 8px 13px; }.history-layout { grid-template-columns: 1fr; }.history-list { border-right: 0; border-bottom: 1px solid var(--border); padding-right: 0; max-height: 355px; }.history-detail { padding: 25px 4px; }.history-row { padding: 18px 14px; }.history-detail-error { min-height: 240px; } }
+.telephone-page { animation: appear .3s ease both; }
+.telephone-surface { min-width: 0; }
+.telephone-surface .call-mode { overflow-wrap: anywhere; max-width: calc(100% - 65px); line-height: 1.7; }
+.telephone-status { text-align: center; padding: 37px 0 19px; }
+.telephone-status > svg { color: #819d6d; margin-bottom: 16px; }
+.telephone-status h2 { font-size: 20px; margin: 0 0 11px; }
+.telephone-status p, .telephone-device-note, .telephone-mode-note { font-size: 11px; color: #8a9a7d; line-height: 1.8; }
+.telephone-status p { margin: 0; }
+.dial-form { width: min(100%, 330px); }
+.dial-form .button { width: 100%; justify-content: center; }
+.dial-form .field { margin-bottom: 16px; }
+.telephone-device-note { margin-top: auto; padding-top: 22px; text-align: center; }
+.telephone-config { margin-top: 38px; }
+.telephone-provider legend { margin-bottom: 11px; }
+.provider-enabled { display: flex; align-items: center; gap: 9px; margin: 19px 0 25px; font-size: 12px; }
+.provider-enabled input { width: 15px; height: 15px; accent-color: var(--accent); }
+.provider-enabled small { margin-left: auto; color: var(--text-muted); font-size: 10px; }
+.phone-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 20px; }
+.phone-fields .secret-line { grid-column: 1 / -1; }
+.record-source { padding-top: 20px; }
+.record-source > span { color: #96a48a; font-size: 9px; }
+.record-source p { color: #607851; font-size: 11px; line-height: 1.9; margin: 8px 0 0; overflow-wrap: anywhere; }
+@media (max-width: 800px) { .sidebar nav { gap: 2px; }.nav-item { padding-inline: 9px; } }
+@media (max-width: 560px) { .phone-fields { grid-template-columns: 1fr; }.telephone-page .page-heading { flex-wrap: wrap; }.telephone-layout .call-surface { min-height: 480px; }.telephone-config { margin-top: 24px; } }

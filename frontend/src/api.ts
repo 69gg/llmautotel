@@ -1,4 +1,4 @@
-import type { CallRecord, CallSummary, EndReason, Settings, SettingsUpdate, StartCallResult } from './types';
+import type { CallRecord, CallSummary, EndReason, Settings, SettingsUpdate, StartCallResult, TelephonyProvider, TelephonyProviderName } from './types';
 
 export class ApiError extends Error {
   constructor(message: string, public readonly status: number) {
@@ -41,7 +41,11 @@ export const api = {
   }),
   startCall: () => request<StartCallResult>('/api/calls', { method: 'POST' }),
   endCall: (id: string, reason: EndReason = 'user_hangup') => request<CallRecord>(`/api/calls/${encodeURIComponent(id)}/end`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason }) }),
-  activeCall: () => request<CallRecord | null>('/api/calls/active'),
+  activeCall: (signal?: AbortSignal) => request<CallRecord | null>('/api/calls/active', { signal }),
+  telephonyProviders: (signal?: AbortSignal) => request<TelephonyProvider[]>('/api/telephony/providers', { signal }),
+  startTelephoneCall: (provider: TelephonyProviderName, destination: string) => request<{ call: CallRecord }>('/api/telephony/calls', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider, destination }),
+  }),
   calls: (signal?: AbortSignal) => request<CallSummary[]>('/api/calls', { signal }),
   call: (id: string, signal?: AbortSignal) => request<CallRecord>(`/api/calls/${encodeURIComponent(id)}`, { signal }),
   deleteCall: (id: string) => request<void>(`/api/calls/${encodeURIComponent(id)}`, { method: 'DELETE' }),

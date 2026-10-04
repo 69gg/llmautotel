@@ -27,6 +27,17 @@ function mockRecords() {
 async function ready() { await screen.findByText('价格是多少？'); }
 
 describe('本机文字历史', () => {
+  it('电话记录显示来源、provider、被叫号码及电话结束原因', async () => {
+    vi.spyOn(api, 'calls').mockResolvedValue([{ ...summary, channel: 'telephone', provider: 'asterisk', destination: '13800000000', end_reason: 'busy' }]);
+    vi.spyOn(api, 'call').mockResolvedValue({ ...record, channel: 'telephone', provider: 'asterisk', destination: '13800000000', end_reason: 'busy' });
+    render(<HistoryPage />);
+    await ready();
+    const detail = within(screen.getByRole('region', { name: '记录详情' }));
+    expect(detail.getByText('电话外呼 · Asterisk · 13800000000')).toBeInTheDocument();
+    expect(detail.getByText('被叫忙线')).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: '通话列表' })).getByText('2 条对话 · 电话外呼')).toBeInTheDocument();
+  });
+
   it('显示真实列表、结束原因、被打断文字和通话配置快照', async () => {
     const user = userEvent.setup();
     mockRecords();

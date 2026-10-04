@@ -2,6 +2,23 @@ export type ProviderName = 'asr' | 'llm' | 'tts';
 export type AudioProtocol = 'openai' | 'mimo';
 export type ThinkingMode = 'enabled' | 'disabled';
 export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'max';
+export type TelephonyProviderName = 'asterisk' | 'freeswitch' | 'aliyun' | 'tencent';
+export interface TelephonyProviderSettings {
+  enabled: boolean;
+  [field: string]: string | number | boolean | null;
+}
+export interface TelephonySettings extends Record<TelephonyProviderName, TelephonyProviderSettings> {
+  public_base_url: string;
+}
+export type TelephonySecretDrafts = Partial<Record<TelephonyProviderName, Record<string, string | null>>>;
+export interface TelephonyProvider {
+  id: TelephonyProviderName;
+  label: string;
+  mode: 'media' | 'cloud';
+  description: string;
+  enabled: boolean;
+  fields: { name: string; label: string; type: 'secret' | 'integer' | 'number' | 'string'; nullable: boolean; minimum: number | null; maximum: number | null }[];
+}
 
 export interface ProviderSettings {
   base_url: string;
@@ -16,6 +33,7 @@ export interface Settings {
   llm: ProviderSettings & { thinking: ThinkingMode | null; reasoning_effort: ReasoningEffort | null };
   tts: ProviderSettings & { protocol: AudioProtocol; voice: string; sample_rate: number };
   voice: { vad_start_seconds: number; vad_stop_seconds: number; vad_confidence: number };
+  telephony: TelephonySettings;
 }
 
 export type SettingsUpdate = Omit<Settings, ProviderName> & {
@@ -41,6 +59,10 @@ export interface CallRecord {
   end_reason: string | null;
   settings: Settings;
   transcript: TranscriptEntry[];
+  channel?: 'browser' | 'telephone';
+  provider?: TelephonyProviderName | null;
+  destination?: string | null;
+  state?: string;
 }
 
 export interface CallSummary extends Omit<CallRecord, 'settings' | 'transcript'> {
@@ -60,7 +82,7 @@ export interface StartCallResult {
 
 export type EndReason = 'user_hangup' | 'connection_lost';
 
-export function settingsUpdate(settings: Settings, secrets: SecretDrafts): SettingsUpdate {
+export function settingsUpdate(settings: Settings, secrets: SecretDrafts, phoneSecrets: TelephonySecretDrafts = {}): SettingsUpdate {
   const provider = <T extends ProviderSettings>(value: T, secret: string | null) => {
     const { api_key_set: _isSet, ...publicValue } = value;
     return { ...publicValue, ...(secret === null ? { api_key: null } : secret ? { api_key: secret } : {}) };
@@ -71,5 +93,24 @@ export function settingsUpdate(settings: Settings, secrets: SecretDrafts): Setti
     llm: provider(settings.llm, secrets.llm),
     tts: provider(settings.tts, secrets.tts),
     voice: settings.voice,
+    telephony: telephonyUpdate(settings.telephony, phoneSecrets),
   };
+}
+
+export function telephonyUpdate(settings: TelephonySettings, secrets: TelephonySecretDrafts): TelephonySettings {
+  const providers = Object.fromEntries(Object.entries(settings).filter(([name]) => name !== 'public_base_url').map(([name, value]) => {
+    const publicValue = Object.fromEntries(Object.entries(value as TelephonyProviderSettings).filter(([key]) => !key.endsWith('_set')));
+    const changes = Object.fromEntries(Object.entries(secrets[name as TelephonyProviderName] ?? {}).filter(([, value]) => value !== ''));
+    return [name, { ...publicValue, ...changes }];
+  }));
+  return { public_base_url: settings.public_base_url, ...providers } as TelephonySettings;
+}
+
+export const phoneProviderLabels: Record<TelephonyProviderName, string> = {
+  asterisk: 'Asterisk', freeswitch: 'FreeSWITCH', aliyun: '阿里云 AICCS', tencent: '腾讯云 TCCC',
+};
+
+export function callSource(call: Pick<CallRecord, 'channel' | 'provider' | 'destination'>): string {
+  if (call.channel !== 'telephone') return '浏览器语音';
+  return ['电话外呼', call.provider ? phoneProviderLabels[call.provider] ?? call.provider : '', call.destination ?? ''].filter(Boolean).join(' · ');
 }
