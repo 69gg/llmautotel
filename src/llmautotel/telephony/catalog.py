@@ -20,6 +20,7 @@ PROVIDERS: dict[str, tuple[str, str, str]] = {
 }
 
 LABELS: dict[str, str] = {
+    "call_timeout_seconds": "回执缺失时的通话上限（秒）",
     "ari_url": "ARI 地址",
     "username": "ARI 用户名",
     "password": "连接密码",
@@ -28,6 +29,7 @@ LABELS: dict[str, str] = {
     "caller_id": "主叫号码",
     "ring_timeout_seconds": "振铃超时（秒）",
     "media_timeout_seconds": "媒体就绪超时（秒）",
+    "cleanup_timeout_seconds": "远端资源清理总超时（秒）",
     "host": "ESL 主机",
     "port": "ESL 端口",
     "gateway": "SIP 网关名称",

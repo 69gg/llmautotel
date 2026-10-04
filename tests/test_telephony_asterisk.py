@@ -12,7 +12,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import httpx
 import pytest
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 from websockets.asyncio.server import ServerConnection, serve
 
 import llmautotel.telephony.asterisk as asterisk_module
@@ -513,9 +513,11 @@ async def test_close_during_media_creation_cancels_background_setup(pbx: FakePBX
         await driver.start("13800000000", "test-call")
         pbx.answered()
         await asyncio.wait_for(pbx.media_created.wait(), 1)
-        await asyncio.wait_for(driver.close(), 1)
-        pbx.hold_media.set()
+        closing = asyncio.create_task(driver.close())
         await asyncio.sleep(0)
+        assert not closing.done()
+        pbx.hold_media.set()
+        await asyncio.wait_for(closing, 1)
         assert log.ready_count == 0
         assert len(pbx.connections) == 1
         assert pbx.events.closed
@@ -566,3 +568,215 @@ async def test_hangup_closes_sockets_once_and_cancels_pending_playback(pbx: Fake
         assert len([r for r in pbx.requests if r.method == "DELETE"]) == 3
         with pytest.raises(TelephonyError, match="重复启动"):
             await driver.start("13800000000", "test-call")
+
+
+@pytest.mark.parametrize("create_path", ["/channels", "/bridges", "/channels/externalMedia"])
+@pytest.mark.parametrize("cancel_waiter", [False, True])
+async def test_close_waits_for_independent_late_creation_before_deleting(
+    pbx: FakePBX, create_path: str, cancel_waiter: bool
+) -> None:
+    accepted, complete = asyncio.Event(), asyncio.Event()
+    remote: set[str] = set()
+    jobs: list[asyncio.Task[None]] = []
+    deletes: list[tuple[str, bool]] = []
+
+    async def create_remote(resource: str) -> None:
+        await complete.wait()
+        remote.add(resource)
+
+    async def request(message: httpx.Request) -> httpx.Response:
+        path = message.url.path.removeprefix("/office/ari")
+        if message.method == "DELETE":
+            pbx.requests.append(message)
+            resource = path.rsplit("/", 1)[1]
+            existed = resource in remote
+            remote.discard(resource)
+            deletes.append((resource, existed))
+            return httpx.Response(204 if existed else 404)
+        response = await pbx.request(message)
+        if message.method == "POST" and path in {
+            "/channels",
+            "/bridges",
+            "/channels/externalMedia",
+        }:
+            resource = message.url.params["bridgeId" if path == "/bridges" else "channelId"]
+            if path == create_path:
+                # 模拟远端已接受请求；本地 HTTP 取消后，服务器仍会独立完成创建。
+                job = asyncio.create_task(create_remote(resource))
+                jobs.append(job)
+                accepted.set()
+                await asyncio.shield(job)
+            else:
+                remote.add(resource)
+        return response
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(request)) as client:
+        # 清理预算比迟到的创建完成更短；创建结果须使用独立请求期限。
+        config = settings().model_copy(update={"cleanup_timeout_seconds": 0.01})
+        driver = AsteriskDriver(config, CallbackLog().callbacks(), client=client)
+        starting = asyncio.create_task(driver.start("13800000000", "test-call"))
+        closing: asyncio.Task[None] | None = None
+        try:
+            if create_path != "/channels":
+                await starting
+                pbx.answered()
+            await asyncio.wait_for(accepted.wait(), 1)
+            closing = asyncio.create_task(driver.close())
+            await asyncio.sleep(0.02)
+            assert not closing.done()
+            if cancel_waiter:
+                closing.cancel()
+                await asyncio.sleep(0)
+                assert not closing.done()
+            complete.set()
+            if cancel_waiter:
+                with pytest.raises(asyncio.CancelledError):
+                    await asyncio.wait_for(closing, 1)
+            else:
+                await asyncio.wait_for(closing, 1)
+            await asyncio.gather(starting, return_exceptions=True)
+            await asyncio.gather(*jobs)
+            assert remote == set()
+            assert any(existed for _, existed in deletes)
+            assert len(deletes) == 3
+            assert not driver._creates and not driver._tasks
+            assert pbx.events.closed
+            assert (
+                len([item for item in pbx.requests if item.method == "POST"])
+                == ({"/channels": 1, "/bridges": 2, "/channels/externalMedia": 3}[create_path])
+            )
+            await driver.close()
+            assert len(deletes) == 3
+        finally:
+            complete.set()
+            await asyncio.gather(starting, *jobs, return_exceptions=True)
+            if closing is not None:
+                await asyncio.gather(closing, return_exceptions=True)
+            await driver.close()
+
+
+@pytest.mark.parametrize(
+    "failed_resource", ["test-call-pstn", "test-call-media", "test-call-bridge"]
+)
+async def test_cleanup_http_failure_is_reported_after_every_resource_and_client_closes(
+    pbx: FakePBX, failed_resource: str
+) -> None:
+    async def request(message: httpx.Request) -> httpx.Response:
+        if message.method == "DELETE" and message.url.path.endswith("/" + failed_resource):
+            pbx.requests.append(message)
+            return httpx.Response(503, json={"message": "test-secret upstream body"})
+        return await pbx.request(message)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(request))
+    driver, _ = await opened_driver(pbx, client)
+    driver._owns_client = True
+    with pytest.raises(TelephonyError, match="清理失败") as error:
+        await driver.close()
+    assert "test-secret" not in str(error.value) and "upstream" not in str(error.value)
+    assert client.is_closed and pbx.events.closed and pbx.media.closed
+    assert len([item for item in pbx.requests if item.method == "DELETE"]) == 3
+    await driver.close()
+    assert len([item for item in pbx.requests if item.method == "DELETE"]) == 3
+
+
+async def test_cleanup_timeout_is_shared_by_deletes_and_websockets_and_closes_client(
+    pbx: FakePBX,
+) -> None:
+    cancelled: list[str] = []
+
+    async def request(message: httpx.Request) -> httpx.Response:
+        if message.method == "DELETE":
+            pbx.requests.append(message)
+            try:
+                await asyncio.sleep(1)
+            except asyncio.CancelledError:
+                cancelled.append(message.url.path)
+                raise
+        return await pbx.request(message)
+
+    async def blocked_close() -> None:
+        try:
+            await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            cancelled.append("events-websocket")
+            raise
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(request))
+    driver, _ = await opened_driver(pbx, client)
+    driver._owns_client = True
+    driver._settings.cleanup_timeout_seconds = 0.03
+    pbx.events.close = blocked_close
+    started = asyncio.get_running_loop().time()
+    with pytest.raises(TelephonyError, match="清理失败或超时"):
+        await driver.close()
+    assert asyncio.get_running_loop().time() - started < 0.3
+    assert client.is_closed and pbx.media.closed
+    assert len(cancelled) == 4
+    assert len([item for item in pbx.requests if item.method == "DELETE"]) == 3
+    await driver.close()
+
+
+async def test_websocket_cleanup_failure_does_not_skip_other_resources(pbx: FakePBX) -> None:
+    async def broken_close() -> None:
+        raise RuntimeError("test-secret websocket details")
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(pbx.request))
+    driver, _ = await opened_driver(pbx, client)
+    driver._owns_client = True
+    pbx.media.close = broken_close
+    with pytest.raises(TelephonyError, match="清理失败") as error:
+        await driver.close()
+    assert "test-secret" not in str(error.value)
+    assert pbx.events.closed and client.is_closed
+    assert len([item for item in pbx.requests if item.method == "DELETE"]) == 3
+
+
+@pytest.mark.parametrize("terminal", ["finish", "fail"])
+async def test_cleanup_failure_still_notifies_error_and_end(pbx: FakePBX, terminal: str) -> None:
+    async def request(message: httpx.Request) -> httpx.Response:
+        if message.method == "DELETE":
+            pbx.requests.append(message)
+            return httpx.Response(503)
+        return await pbx.request(message)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(request)) as client:
+        driver, log = await opened_driver(pbx, client)
+        if terminal == "finish":
+            with pytest.raises(TelephonyError, match="清理失败"):
+                await driver._finish("hangup")
+        else:
+            await driver._fail("原始媒体故障。")
+        assert len(log.errors) == 1 and "清理失败" in log.errors[0]
+        assert log.ended == ["provider_error"]
+        await driver.close()
+        assert len(log.errors) == 1 and log.ended == ["provider_error"]
+
+
+def test_cleanup_budget_default_and_limits() -> None:
+    assert AsteriskSettings().cleanup_timeout_seconds == 5
+    assert AsteriskSettings(cleanup_timeout_seconds=1).cleanup_timeout_seconds == 1
+    assert AsteriskSettings(cleanup_timeout_seconds=30).cleanup_timeout_seconds == 30
+    for value in (0.5, 31):
+        with pytest.raises(ValidationError):
+            AsteriskSettings(cleanup_timeout_seconds=value)
+
+
+async def test_unconfirmed_creation_timeout_reports_remote_cleanup_uncertainty(
+    pbx: FakePBX,
+) -> None:
+    async def request(message: httpx.Request) -> httpx.Response:
+        if message.method == "POST":
+            pbx.requests.append(message)
+            await asyncio.Event().wait()
+        return await pbx.request(message)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(request))
+    config = settings().model_copy(update={"media_timeout_seconds": 0.03})
+    driver = AsteriskDriver(config, CallbackLog().callbacks(), client=client)
+    driver._owns_client = True
+    with pytest.raises(TelephonyError, match="清理失败或超时"):
+        await driver.start("13800000000", "test-call")
+    assert client.is_closed and pbx.events.closed
+    assert len([item for item in pbx.requests if item.method == "DELETE"]) == 3
+    assert not driver._creates
+    await driver.close()

@@ -25,6 +25,7 @@
 | `caller_id` | 线路方认可的主叫号码，最终显示由 PBX 和运营商规则决定 |
 | `ring_timeout_seconds` | 等待被叫接听的最长振铃秒数；向 ARI 发送时向上取整为整数 |
 | `media_timeout_seconds` | ARI 请求、WebSocket 握手和媒体初始化超时秒数 |
+| `cleanup_timeout_seconds` | 两条 WebSocket 与三个远端资源删除共用的清理总预算，默认 5 秒，可配 1 至 30 秒 |
 
 密码通过 HTTP／WebSocket `Authorization` 头发送，不加入事件 URL 查询参数。事件连接是 `ari_url/events?app=...`；媒体连接从同一地址去除最后的 `/ari` 后拼接 `/media/<临时连接 ID>`。例如 `/pbx/ari` 对应 `/pbx/media/...`，反向代理须同时转发这两个路径的 WebSocket Upgrade。应用直接访问 PBX，不继承环境代理。
 
@@ -57,9 +58,11 @@ password = <专用随机密码>
 4. 入站音频使用 WebSocket BINARY 帧；控制使用 JSON TEXT 帧。出站音频按 Asterisk 最大消息大小分块，`START_MEDIA_BUFFERING`／`STOP_MEDIA_BUFFERING` 保留不满整帧的尾部，`MEDIA_XOFF`／`MEDIA_XON` 处理流控。
 5. 用户插话时，语音服务取消旧生成和 TTS，driver 发送 `FLUSH_MEDIA` 清除 PBX 待播放队列；等待发送的旧音频及旧播放标记同时失效。迟到的 `MEDIA_MARK_PROCESSED` 不能完成新回合或触发旧挂断。
 6. 每次等待播放完成使用独立 `MARK_MEDIA.correlation_id`，对应回执才认为此前媒体已由 PBX 处理；还发送 `REPORT_QUEUE_DRAINED`，但无关联 ID 的队列通知不单独完成播放等待。AI 告别须先等播放标记完成，再挂断；用户手动挂断立即停止通话。
-7. 结束时关闭两条 WebSocket、取消后台任务，删除 SIP 通道、媒体通道与 bridge。忙线、未接听、拒接、断连和接入错误作为结束原因交给应用保存。
+7. 结束时取消后台准备任务。已发出的创建请求仍等待结果，单独受 `media_timeout_seconds` 约束；即使挂断先到，也在迟到创建完成后删除预先分配的 SIP 通道、媒体通道与 bridge，不重复发起外呼。之后两条 WebSocket 关闭与三个资源删除并行执行，共用 `cleanup_timeout_seconds`，404 表示资源已不存在。删除失败或超时会关闭本地客户端并报告清理失败，仍通知应用收尾并保存状态。
 
 播放回执表示 **PBX 媒体队列进度**，不能证明用户手机扬声器已播放到某个字。实际线路、手机端延迟和回声需单独验收。失败不自动重拨，避免创建重复外呼。
+
+挂断等待正在进行的创建请求时，最长可能先等待其独立请求期限，再使用清理总预算。PBX 或管理网络完全不可达、创建结果超时未知时，应用无法保证远端电话已经挂断；清理失败提示需要管理员在 PBX 确认本通通道状态，不能把本地资源释放当作远端挂断成功。
 
 ## 已验证和待验证
 
@@ -69,6 +72,6 @@ password = <专用随机密码>
 uv run pytest tests/test_telephony_asterisk.py -q
 ```
 
-可控 HTTP 替身核对实际请求 URL、Basic 鉴权头、拨号参数、externalMedia、变量读取及 bridge 操作；可控 WebSocket 替身验证振铃与 Stasis 时序、音频分块、流控、打断、旧结果迟到、关闭与错误信息。另有真实本机 WebSocket server 验证 Upgrade、子协议、TEXT／BINARY 帧和标记确认；全部测试只使用测试凭据，不发真实电话。
+可控 HTTP 替身核对实际请求 URL、Basic 鉴权头、拨号参数、externalMedia、变量读取及 bridge 操作，并通过独立远端任务验证挂断先到、三个创建操作迟到完成后仍被清理；清理 HTTP 失败、共用超时、WebSocket 关闭异常、本地客户端释放与幂等收尾亦有覆盖。可控 WebSocket 替身验证振铃与 Stasis 时序、音频分块、流控、打断、旧结果迟到、关闭与错误信息。另有真实本机 WebSocket server 验证 Upgrade、子协议、TEXT／BINARY 帧和标记确认；全部测试只使用测试凭据，不发真实电话。
 
 尚未验证实体 Asterisk、SIP 运营商／网关线路、真实号码呼叫、忙音与主叫显示、手机端音质、告别完整播放或 500 ms 内停音。甲方确定 PBX 和线路后，需在其测试线路上完成这些项目；不能把协议测试结果当作运营商联通验收。

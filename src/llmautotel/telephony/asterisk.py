@@ -17,6 +17,8 @@ from websockets.asyncio.client import ClientConnection, connect
 from llmautotel.telephony.base import MediaCallbacks, TelephonyError
 from llmautotel.telephony.settings import AsteriskSettings
 
+_CREATE_PATHS = {"/channels", "/bridges", "/channels/externalMedia"}
+
 
 class AsteriskDriver:
     """仅显式 start 发起一通电话；ARI 与媒体连接相互独立。"""
@@ -37,7 +39,10 @@ class AsteriskDriver:
         self._events: ClientConnection | None = None
         self._media: ClientConnection | None = None
         self._tasks: set[asyncio.Task[None]] = set()
+        self._creates: set[asyncio.Task[dict[str, Any]]] = set()
+        self._unconfirmed_create = False
         self._start_task: asyncio.Task[Any] | None = None
+        self._cleanup_task: asyncio.Task[None] | None = None
         self._send_lock = asyncio.Lock()
         self._close_lock = asyncio.Lock()
         self._can_send = asyncio.Event()
@@ -120,18 +125,37 @@ class AsteriskDriver:
         params: dict[str, str | int] | None = None,
         missing_ok: bool = False,
     ) -> dict[str, Any]:
+        if method == "POST" and path in _CREATE_PATHS:
+            # 取消本地等待不等于撤销远端创建。保留请求到收到结果或独立请求超时，
+            # close 必须在这些请求结束后才删除预先分配的资源 ID。
+            task = asyncio.create_task(self._perform_request(method, path, params=params))
+            self._creates.add(task)
+            return await asyncio.shield(task)
+        return await self._perform_request(method, path, params=params, missing_ok=missing_ok)
+
+    async def _perform_request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, str | int] | None = None,
+        missing_ok: bool = False,
+    ) -> dict[str, Any]:
         assert self._client is not None
         try:
-            response = await self._client.request(
-                method,
-                self._settings.ari_url.rstrip("/") + path,
-                params=params,
-                headers={"Authorization": self._authorization()},
-                timeout=self._settings.media_timeout_seconds,
-            )
-        except httpx.HTTPError as exc:
+            async with asyncio.timeout(self._settings.media_timeout_seconds):
+                response = await self._client.request(
+                    method,
+                    self._settings.ari_url.rstrip("/") + path,
+                    params=params,
+                    headers={"Authorization": self._authorization()},
+                    timeout=self._settings.media_timeout_seconds,
+                )
+        except (httpx.HTTPError, TimeoutError):
+            if method == "POST" and path in _CREATE_PATHS:
+                self._unconfirmed_create = True
             # 不透出 URL、响应正文或认证信息，避免本地界面/历史泄露凭据。
-            raise TelephonyError("Asterisk ARI 网络请求失败。") from exc
+            raise TelephonyError("Asterisk ARI 网络请求失败或超时。") from None
         if missing_ok and response.status_code == 404:
             return {}
         if not response.is_success:
@@ -416,9 +440,15 @@ class AsteriskDriver:
                 await self._command("FLUSH_MEDIA")
 
     async def _fail(self, message: str) -> None:
-        await self.close()
-        await self._callbacks.on_error(message)
-        await self._notify_ended("provider_error")
+        try:
+            await self.close()
+        except TelephonyError as exc:
+            message = f"{message} {exc}"
+        finally:
+            try:
+                await self._callbacks.on_error(message)
+            finally:
+                await self._notify_ended("provider_error")
 
     async def _notify_ended(self, reason: str) -> None:
         if not self._ended:
@@ -426,38 +456,77 @@ class AsteriskDriver:
             await self._callbacks.on_ended(reason)
 
     async def _finish(self, reason: str) -> None:
-        await self.close()
-        await self._notify_ended(reason)
+        try:
+            await self.close()
+        except TelephonyError as exc:
+            reason = "provider_error"
+            await self._callbacks.on_error(str(exc))
+            raise
+        finally:
+            await self._notify_ended(reason)
 
     async def hangup(self) -> None:
         await self._finish("hangup")
 
     async def close(self) -> None:
+        caller = asyncio.current_task()
         async with self._close_lock:
-            if self._closed:
+            if self._cleanup_task is not None and self._cleanup_task.done():
                 return
-            self._closed = True
-            self._invalidate_marks()
-            current = asyncio.current_task()
-            tasks = [task for task in self._tasks if task is not current]
-            if self._start_task is not None and self._start_task is not current:
-                tasks.append(self._start_task)
-            for task in tasks:
-                task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
-            for websocket in (self._media, self._events):
-                if websocket is not None:
-                    await websocket.close()
+            if self._cleanup_task is None:
+                self._closed = True
+                self._invalidate_marks()
+                self._cleanup_task = asyncio.create_task(self._cleanup(caller))
+            task = self._cleanup_task
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            # driver 自己的任务由 cleanup 取消，必须立即退出，避免互相等待。
+            if caller in self._tasks or caller is self._start_task:
+                raise
+            # 上层取消只取消等待者；继续确认远端创建与删除后才释放本通槽位。
+            await asyncio.shield(task)
+            raise
+
+    async def _cleanup(self, caller: asyncio.Task[Any] | None) -> None:
+        tasks = [task for task in self._tasks if task is not caller]
+        if self._start_task is not None and self._start_task is not caller:
+            tasks.append(self._start_task)
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        failed = False
+        try:
+            # 创建请求有自己的 media_timeout，不能被较短的 cleanup 预算截断。
+            if self._creates:
+                await asyncio.gather(*self._creates, return_exceptions=True)
+                self._creates.clear()
+            failed = self._unconfirmed_create
+            operations: list[Coroutine[Any, Any, Any]] = [
+                websocket.close()
+                for websocket in (self._media, self._events)
+                if websocket is not None
+            ]
             if self._started and self._client is not None:
-                # 请求前已分配固定ID；即使创建请求被取消也能回收服务端资源。
-                for path in (
-                    f"/channels/{self._channel_id}",
-                    f"/channels/{self._external_id}",
-                    f"/bridges/{self._bridge_id}",
-                ):
-                    try:
-                        await self._request("DELETE", path, missing_ok=True)
-                    except TelephonyError:
-                        pass
+                operations.extend(
+                    self._request("DELETE", path, missing_ok=True)
+                    for path in (
+                        f"/channels/{self._channel_id}",
+                        f"/channels/{self._external_id}",
+                        f"/bridges/{self._bridge_id}",
+                    )
+                )
+            try:
+                async with asyncio.timeout(self._settings.cleanup_timeout_seconds):
+                    results = await asyncio.gather(*operations, return_exceptions=True)
+                    failed = failed or any(isinstance(result, BaseException) for result in results)
+            except TimeoutError:
+                failed = True
+        finally:
             if self._owns_client and self._client is not None:
-                await self._client.aclose()
+                try:
+                    await self._client.aclose()
+                except Exception:
+                    failed = True
+        if failed:
+            raise TelephonyError("Asterisk 远端资源清理失败或超时，请确认 PBX 电话状态。")

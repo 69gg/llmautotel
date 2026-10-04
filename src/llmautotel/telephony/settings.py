@@ -50,6 +50,7 @@ class AsteriskSettings(PhoneProviderSettings):
     caller_id: str = ""
     ring_timeout_seconds: float = Field(default=45, ge=5, le=180)
     media_timeout_seconds: float = Field(default=10, ge=1, le=60)
+    cleanup_timeout_seconds: float = Field(default=5, ge=1, le=30)
 
     _url = field_validator("ari_url")(http_url)
 
@@ -99,6 +100,7 @@ class FreeswitchSettings(PhoneProviderSettings):
     caller_id: str = ""
     ring_timeout_seconds: float = Field(default=45, ge=5, le=180)
     media_timeout_seconds: float = Field(default=10, ge=1, le=60)
+    cleanup_timeout_seconds: float = Field(default=5, ge=1, le=10)
     fs_media_host: str = ""
     fs_media_port: int = Field(default=0, ge=0, le=65535)
     audio_bind_host: str = "127.0.0.1"
@@ -151,6 +153,7 @@ class CloudSettings(PhoneProviderSettings):
     webhook_token: SecretStr | None = None
     tts_voice: str = ""
     timeout_seconds: float = Field(default=30, ge=1, le=120)
+    call_timeout_seconds: float = Field(default=3600, ge=60, le=14400)
 
     _url = field_validator("endpoint")(http_url)
 
