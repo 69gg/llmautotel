@@ -1,0 +1,478 @@
+"""真实 TCP ESL 和 UDP PCM 线格式的可控 FreeSWITCH 对端，无外部线路。"""
+
+from __future__ import annotations
+
+import asyncio
+import re
+from collections.abc import AsyncGenerator
+from contextlib import suppress
+from dataclasses import dataclass, field
+from typing import Any
+from uuid import uuid4
+
+import pytest
+
+from llmautotel.telephony.base import MediaCallbacks, TelephonyError
+from llmautotel.telephony.freeswitch import FreeSwitchDriver, _ESLConnection, _read_frame
+from llmautotel.telephony.settings import FreeswitchSettings
+
+PCM = (1234).to_bytes(2, "little", signed=True) * 160
+
+
+@dataclass
+class CallbackLog:
+    ready: asyncio.Event = field(default_factory=asyncio.Event)
+    received: asyncio.Event = field(default_factory=asyncio.Event)
+    ended: asyncio.Event = field(default_factory=asyncio.Event)
+    failed: asyncio.Event = field(default_factory=asyncio.Event)
+    audio: list[tuple[bytes, int]] = field(default_factory=list)
+    reasons: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+
+    async def on_ready(self) -> None:
+        self.ready.set()
+
+    async def on_audio(self, audio: bytes, rate: int) -> None:
+        self.audio.append((audio, rate))
+        self.received.set()
+
+    async def on_ended(self, reason: str) -> None:
+        self.reasons.append(reason)
+        self.ended.set()
+
+    async def on_error(self, error: str) -> None:
+        self.errors.append(error)
+        self.failed.set()
+
+    def callbacks(self) -> MediaCallbacks:
+        return MediaCallbacks(self.on_ready, self.on_audio, self.on_ended, self.on_error)
+
+
+class FakePCM(asyncio.DatagramProtocol):
+    def __init__(self) -> None:
+        self.received: asyncio.Queue[bytes] = asyncio.Queue()
+
+    def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
+        self.received.put_nowait(data)
+
+
+class FakeFreeSwitch:
+    def __init__(self) -> None:
+        self.commands: list[str] = []
+        self.auto_answer = True
+        self.send_media = True
+        self.auth_ok = True
+        self.rate = b"8000"
+        self.password = "test-esl-password"
+        self.call_id = ""
+        self.writer: asyncio.StreamWriter | None = None
+        self.peer: tuple[str, int] | None = None
+        self.client_closed = asyncio.Event()
+        self.tasks: set[asyncio.Task[None]] = set()
+        self.media = FakePCM()
+        self.udp: asyncio.DatagramTransport | None = None
+        self.server: asyncio.Server | None = None
+
+    async def open(self) -> None:
+        transport, _ = await asyncio.get_running_loop().create_datagram_endpoint(
+            lambda: self.media, local_addr=("127.0.0.1", 0)
+        )
+        self.udp = transport
+        self.server = await asyncio.start_server(self.handle, "127.0.0.1", 0)
+
+    def settings(self, **changes: Any) -> FreeswitchSettings:
+        assert self.server is not None and self.udp is not None
+        values: dict[str, Any] = {
+            "enabled": True,
+            "host": "127.0.0.1",
+            "port": self.server.sockets[0].getsockname()[1],
+            "password": self.password,
+            "gateway": "customer_sip_trunk",
+            "caller_id": "01012345678",
+            "fs_media_host": "127.0.0.1",
+            "fs_media_port": self.udp.get_extra_info("sockname")[1],
+            "audio_bind_host": "127.0.0.1",
+            "audio_advertised_host": "127.0.0.1",
+        }
+        values.update(changes)
+        return FreeswitchSettings(**values)
+
+    async def packet(self, headers: dict[str, str], body: bytes = b"") -> None:
+        assert self.writer is not None
+        if body:
+            headers = {**headers, "Content-Length": str(len(body))}
+        wire = "".join(f"{key}: {value}\n" for key, value in headers.items()).encode()
+        # 刻意拆分头/body TCP 写入，客户端不能假定一次 recv 等于一帧。
+        self.writer.write(wire + b"\n")
+        await self.writer.drain()
+        if body:
+            self.writer.write(body[:7])
+            self.writer.write(body[7:])
+            await self.writer.drain()
+
+    async def event(self, event: str, *, call_id: str | None = None, cause: str = "") -> None:
+        body = f"Event-Name: {event}\nUnique-ID: {call_id or self.call_id}\n"
+        if cause:
+            body += f"Hangup-Cause: {cause}\n"
+        await self.packet({"Content-Type": "text/event-plain"}, body.encode())
+
+    async def background_failure(self, cause: str) -> None:
+        originate = next(command for command in self.commands if command.startswith("bgapi"))
+        body = (
+            "Event-Name: BACKGROUND_JOB\n"
+            f"Job-Command-Arg: {originate.removeprefix('bgapi originate ')}\n\n"
+            f"-ERR {cause}\n"
+        ).encode()
+        await self.packet({"Content-Type": "text/event-plain"}, body)
+
+    async def media_frames(self) -> None:
+        assert self.udp is not None and self.peer is not None
+        for _ in range(3):
+            await asyncio.sleep(0.01)
+            self.udp.sendto(PCM, self.peer)
+
+    async def handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        task = asyncio.current_task()
+        assert task is not None
+        self.tasks.add(task)
+        self.writer = writer
+        try:
+            await self.packet({"Content-Type": "auth/request"})
+            while True:
+                try:
+                    command = (await reader.readuntil(b"\n\n")).decode().strip()
+                except asyncio.IncompleteReadError:
+                    return
+                self.commands.append(command)
+                if command.startswith("auth "):
+                    assert command == f"auth {self.password}"
+                    await self.packet(
+                        {
+                            "Content-Type": "command/reply",
+                            "Reply-Text": "+OK accepted" if self.auth_ok else "-ERR invalid",
+                        }
+                    )
+                    if not self.auth_ok:
+                        return
+                elif command.startswith("event plain"):
+                    await self.packet({"Content-Type": "command/reply", "Reply-Text": "+OK"})
+                elif command.startswith("bgapi originate"):
+                    match = re.search(r"origination_uuid=([^,]+)", command)
+                    assert match is not None
+                    self.call_id = match[1]
+                    # 通话事件可先于 originate 的命令响应到达。
+                    if self.auto_answer:
+                        await self.event("CHANNEL_ANSWER")
+                    await self.packet(
+                        {"Content-Type": "command/reply", "Reply-Text": "+OK Job-UUID: test-job"}
+                    )
+                elif command.startswith("api uuid_getvar"):
+                    await self.packet({"Content-Type": "api/response"}, self.rate)
+                elif command.startswith("sendmsg "):
+                    fields = dict(line.split(": ", 1) for line in command.splitlines()[1:])
+                    assert fields["call-command"] == "unicast"
+                    assert fields["transport"] == "udp"
+                    assert "flags" not in fields
+                    self.peer = fields["remote-ip"], int(fields["remote-port"])
+                    assert self.udp is not None
+                    assert int(fields["local-port"]) == self.udp.get_extra_info("sockname")[1]
+                    await self.packet({"Content-Type": "command/reply", "Reply-Text": "+OK"})
+                    if self.send_media:
+                        await self.media_frames()
+                elif command.startswith("api uuid_kill"):
+                    await self.packet({"Content-Type": "api/response"}, b"+OK\n")
+                else:
+                    raise AssertionError(f"unexpected command: {command}")
+        finally:
+            self.client_closed.set()
+            writer.close()
+            with suppress(Exception):
+                await writer.wait_closed()
+            self.tasks.discard(task)
+
+    async def close(self) -> None:
+        if self.server is not None:
+            self.server.close()
+            await self.server.wait_closed()
+        if self.writer is not None:
+            self.writer.close()
+        if self.udp is not None:
+            self.udp.close()
+        tasks = list(self.tasks)
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+@pytest.fixture
+async def freeswitch() -> AsyncGenerator[FakeFreeSwitch, None]:
+    fake = FakeFreeSwitch()
+    await fake.open()
+    try:
+        yield fake
+    finally:
+        await fake.close()
+
+
+async def ready_driver(fake: FakeFreeSwitch) -> tuple[FreeSwitchDriver, CallbackLog]:
+    log = CallbackLog()
+    driver = FreeSwitchDriver(fake.settings(), log.callbacks())
+    await driver.start("13800138000", str(uuid4()))
+    await asyncio.wait_for(log.received.wait(), timeout=2)
+    return driver, log
+
+
+async def test_esl_originate_and_bidirectional_raw_pcm(freeswitch: FakeFreeSwitch) -> None:
+    driver, log = await ready_driver(freeswitch)
+    try:
+        assert log.ready.is_set()
+        assert log.audio[0] == (PCM, 8000)
+        originate = next(command for command in freeswitch.commands if command.startswith("bgapi"))
+        assert "sofia/gateway/customer_sip_trunk/13800138000 &park()" in originate
+        assert "origination_caller_id_number=01012345678" in originate
+        assert "absolute_codec_string='PCMA,PCMU'" in originate
+        assert "ignore_early_media=true" in originate
+        await driver.send_audio(PCM)
+        assert await asyncio.wait_for(freeswitch.media.received.get(), timeout=1) == PCM
+        await driver.hangup()
+        assert freeswitch.commands[-1] == f"api uuid_kill {freeswitch.call_id} NORMAL_CLEARING"
+    finally:
+        await driver.close()
+    await asyncio.wait_for(freeswitch.client_closed.wait(), timeout=1)
+
+
+async def test_disabled_provider_opens_no_network(freeswitch: FakeFreeSwitch) -> None:
+    driver = FreeSwitchDriver(freeswitch.settings(enabled=False), CallbackLog().callbacks())
+    with pytest.raises(TelephonyError, match="尚未启用"):
+        await driver.start("13800138000", str(uuid4()))
+    assert freeswitch.commands == []
+
+
+@pytest.mark.parametrize("number", ["13800138000\napi status", "100&echo", "../100"])
+async def test_destination_cannot_inject_esl_commands(
+    freeswitch: FakeFreeSwitch, number: str
+) -> None:
+    driver = FreeSwitchDriver(freeswitch.settings(), CallbackLog().callbacks())
+    with pytest.raises(TelephonyError, match="号码格式"):
+        await driver.start(number, str(uuid4()))
+    assert freeswitch.commands == []
+
+
+async def test_esl_auth_failure_is_redacted_and_releases_ports(freeswitch: FakeFreeSwitch) -> None:
+    freeswitch.auth_ok = False
+    driver = FreeSwitchDriver(freeswitch.settings(), CallbackLog().callbacks())
+    with pytest.raises(TelephonyError, match="认证失败") as error:
+        await driver.start("13800138000", str(uuid4()))
+    assert freeswitch.password not in str(error.value)
+    assert not any(command.startswith("bgapi") for command in freeswitch.commands)
+    assert driver._closed
+
+
+async def test_ready_requires_answer_and_real_media(freeswitch: FakeFreeSwitch) -> None:
+    freeswitch.auto_answer = False
+    freeswitch.send_media = False
+    log = CallbackLog()
+    driver = FreeSwitchDriver(freeswitch.settings(), log.callbacks())
+    try:
+        await driver.start("13800138000", str(uuid4()))
+        assert not log.ready.is_set()
+        await freeswitch.event("CHANNEL_ANSWER", call_id=str(uuid4()))
+        await asyncio.sleep(0.02)
+        assert not any(command.startswith("sendmsg") for command in freeswitch.commands)
+        await freeswitch.event("CHANNEL_ANSWER")
+        await asyncio.wait_for(driver._answered.wait(), timeout=1)
+        assert not log.ready.is_set()
+        await freeswitch.media_frames()
+        await asyncio.wait_for(log.ready.wait(), timeout=1)
+    finally:
+        await driver.close()
+
+
+async def test_wrong_udp_peer_and_odd_pcm_are_rejected(freeswitch: FakeFreeSwitch) -> None:
+    freeswitch.send_media = False
+    log = CallbackLog()
+    driver = FreeSwitchDriver(freeswitch.settings(), log.callbacks())
+    transport: asyncio.DatagramTransport | None = None
+    try:
+        await driver.start("13800138000", str(uuid4()))
+        await asyncio.wait_for(driver._answered.wait(), timeout=1)
+        assert freeswitch.peer is not None and freeswitch.udp is not None
+        transport, _ = await asyncio.get_running_loop().create_datagram_endpoint(
+            asyncio.DatagramProtocol, local_addr=("127.0.0.1", 0)
+        )
+        transport.sendto(PCM, freeswitch.peer)
+        freeswitch.udp.sendto(b"odd", freeswitch.peer)
+        await asyncio.sleep(0.03)
+        assert not log.ready.is_set()
+        await freeswitch.media_frames()
+        await asyncio.wait_for(log.received.wait(), timeout=1)
+        assert log.audio[0] == (PCM, 8000)
+    finally:
+        if transport is not None:
+            transport.close()
+        await driver.close()
+
+
+async def test_non_8k_codec_ends_instead_of_mislabeled_audio(freeswitch: FakeFreeSwitch) -> None:
+    freeswitch.rate = b"16000"
+    log = CallbackLog()
+    driver = FreeSwitchDriver(freeswitch.settings(), log.callbacks())
+    try:
+        await driver.start("13800138000", str(uuid4()))
+        await asyncio.wait_for(log.failed.wait(), timeout=1)
+        assert "8 kHz" in log.errors[0]
+        assert not log.ready.is_set()
+        assert any(command.startswith("api uuid_kill") for command in freeswitch.commands)
+    finally:
+        await driver.close()
+
+
+@pytest.mark.parametrize(
+    ("cause", "reason"),
+    [("USER_BUSY", "busy"), ("NO_ANSWER", "no_answer"), ("NORMAL_CLEARING", "remote_hangup")],
+)
+async def test_remote_terminal_events_are_isolated_and_release_resources(
+    freeswitch: FakeFreeSwitch, cause: str, reason: str
+) -> None:
+    driver, log = await ready_driver(freeswitch)
+    try:
+        await freeswitch.event("CHANNEL_HANGUP_COMPLETE", call_id=str(uuid4()), cause=cause)
+        await asyncio.sleep(0.02)
+        assert not log.ended.is_set()
+        await freeswitch.event("CHANNEL_HANGUP_COMPLETE", cause=cause)
+        await asyncio.wait_for(log.ended.wait(), timeout=1)
+        assert log.reasons == [reason]
+        await asyncio.wait_for(freeswitch.client_closed.wait(), timeout=1)
+        await driver.send_audio(PCM)
+        assert freeswitch.media.received.empty()
+    finally:
+        await driver.close()
+
+
+async def test_originate_background_failure_is_not_confused_with_answer(
+    freeswitch: FakeFreeSwitch,
+) -> None:
+    freeswitch.auto_answer = False
+    log = CallbackLog()
+    driver = FreeSwitchDriver(freeswitch.settings(), log.callbacks())
+    try:
+        await driver.start("13800138000", str(uuid4()))
+        await freeswitch.background_failure("NO_ANSWER")
+        await asyncio.wait_for(log.ended.wait(), timeout=1)
+        assert log.reasons == ["no_answer"]
+        assert not log.ready.is_set()
+    finally:
+        await driver.close()
+
+
+async def test_media_timeout_hangs_up_and_reports_audio_stage(freeswitch: FakeFreeSwitch) -> None:
+    freeswitch.send_media = False
+    log = CallbackLog()
+    driver = FreeSwitchDriver(freeswitch.settings(media_timeout_seconds=1), log.callbacks())
+    try:
+        await driver.start("13800138000", str(uuid4()))
+        await asyncio.wait_for(log.failed.wait(), timeout=2)
+        assert "未收到可信的音频" in log.errors[0]
+        assert any(command.startswith("api uuid_kill") for command in freeswitch.commands)
+    finally:
+        await driver.close()
+
+
+async def test_interrupt_cancels_playback_wait_and_no_old_buffer_reappears(
+    freeswitch: FakeFreeSwitch,
+) -> None:
+    driver, _ = await ready_driver(freeswitch)
+    try:
+        old_pcm = b"\x34\x12" * 160
+        new_pcm = b"\x78\x56" * 160
+        await driver.send_audio(old_pcm)
+        assert await asyncio.wait_for(freeswitch.media.received.get(), timeout=1) == old_pcm
+        pending = asyncio.create_task(driver.wait_played())
+        await asyncio.sleep(0)
+        await driver.flush()
+        with pytest.raises(asyncio.CancelledError):
+            await pending
+        await driver.wait_played()  # 旧队列清空，等待不会复活旧音频。
+        await driver.send_audio(new_pcm)
+        assert await asyncio.wait_for(freeswitch.media.received.get(), timeout=1) == new_pcm
+        await asyncio.sleep(0.05)
+        assert freeswitch.media.received.empty()
+    finally:
+        await driver.close()
+
+
+async def test_control_disconnect_ends_active_call(freeswitch: FakeFreeSwitch) -> None:
+    driver, log = await ready_driver(freeswitch)
+    try:
+        assert freeswitch.writer is not None
+        freeswitch.writer.close()
+        await asyncio.wait_for(log.failed.wait(), timeout=1)
+        assert "连接已断开" in log.errors[0]
+        assert driver._terminal
+        # 断开 inbound ESL 不会让 park 电话自动结束；新控制连接只挂掉原 UUID。
+        assert sum(command.startswith("auth ") for command in freeswitch.commands) == 2
+        assert freeswitch.commands[-1] == f"api uuid_kill {freeswitch.call_id} NORMAL_CLEARING"
+    finally:
+        await driver.close()
+
+
+async def test_close_active_call_hangs_up_once(freeswitch: FakeFreeSwitch) -> None:
+    driver, _ = await ready_driver(freeswitch)
+    await driver.close()
+    await driver.close()
+    assert sum(command.startswith("api uuid_kill") for command in freeswitch.commands) == 1
+
+
+async def test_start_cancellation_releases_parked_call(freeswitch: FakeFreeSwitch) -> None:
+    original = freeswitch.packet
+
+    async def blocked_originate(headers: dict[str, str], body: bytes = b"") -> None:
+        if headers.get("Reply-Text", "").startswith("+OK Job-UUID"):
+            await asyncio.sleep(0.1)
+        await original(headers, body)
+
+    freeswitch.auto_answer = False
+    freeswitch.packet = blocked_originate
+    driver = FreeSwitchDriver(freeswitch.settings(), CallbackLog().callbacks())
+    starting = asyncio.create_task(driver.start("13800138000", str(uuid4())))
+    for _ in range(100):
+        if any(command.startswith("bgapi") for command in freeswitch.commands):
+            break
+        await asyncio.sleep(0.005)
+    starting.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await starting
+    assert driver._closed
+    assert any(command.startswith("api uuid_kill") for command in freeswitch.commands)
+
+
+async def test_header_length_counts_bytes_and_accepts_crlf() -> None:
+    reader = asyncio.StreamReader()
+    body = "正文：你好".encode()
+    reader.feed_data(f"Content-Type: api/response\r\nContent-Length: {len(body)}\r\n\r\n".encode())
+    reader.feed_data(body)
+    result = await _read_frame(reader)
+    assert result.body == body
+
+
+async def test_timed_out_command_closes_esl_instead_of_reusing_late_reply(
+    freeswitch: FakeFreeSwitch,
+) -> None:
+    connection = await _ESLConnection.connect(
+        freeswitch.settings().host, freeswitch.settings().port, freeswitch.password
+    )
+    original = freeswitch.packet
+
+    async def delayed(headers: dict[str, str], body: bytes = b"") -> None:
+        if headers.get("Content-Type") == "api/response":
+            await asyncio.sleep(0.2)
+        await original(headers, body)
+
+    freeswitch.packet = delayed
+    try:
+        with pytest.raises(TimeoutError):
+            await connection.command("api uuid_getvar test read_rate", timeout=0.02)
+        with pytest.raises(TelephonyError, match="已关闭"):
+            await connection.command("api uuid_getvar test read_rate")
+    finally:
+        await connection.close()
