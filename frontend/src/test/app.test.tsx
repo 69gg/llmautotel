@@ -24,6 +24,24 @@ vi.mock('@pipecat-ai/client-js', () => ({
 afterEach(() => vi.restoreAllMocks());
 
 describe('工作台导航', () => {
+  it('已填写目标与全部模型但产品资料为空时，开始通话不可用', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, 'settings').mockResolvedValue({
+      ...fixtureSettings,
+      sales: { ...fixtureSettings.sales, product_info: '' },
+      asr: { ...fixtureSettings.asr, base_url: 'https://asr.test/v1', model: 'asr' },
+      llm: { ...fixtureSettings.llm, base_url: 'https://llm.test/v1', model: 'llm' },
+      tts: { ...fixtureSettings.tts, base_url: 'https://tts.test/v1', model: 'tts', voice: 'custom' },
+    });
+    const start = vi.spyOn(api, 'startCall');
+    render(<App />);
+    const button = await screen.findByRole('button', { name: '开始通话' });
+    expect(button).toBeDisabled();
+    await user.click(button);
+    expect(start).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: '语音通话' })).toHaveAttribute('aria-label', '语音通话');
+  });
+
   it('开始后切换配置页仍维持当前通话，保存新配置不改变通话快照', async () => {
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
     const user = userEvent.setup();

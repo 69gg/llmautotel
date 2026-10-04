@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import pytest
 from pipecat.frames.frames import (
@@ -72,10 +72,12 @@ class Passthrough(FrameProcessor):
 
 
 class ControlledLLM(FrameProcessor):
-    def __init__(self, *, block_first: bool) -> None:
+    def __init__(self, *, block_first: bool, unspoken_first: bool = False) -> None:
         super().__init__()
         self.block_first = block_first
+        self.unspoken_first = unspoken_first
         self.inputs: list[list[dict[str, Any]]] = []
+        self.first_blocked = asyncio.Event()
         self.cancelled = asyncio.Event()
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
@@ -86,8 +88,12 @@ class ControlledLLM(FrameProcessor):
         self.inputs.append([dict(message) for message in frame.context.get_messages()])
         await self.push_frame(LLMFullResponseStartFrame())
         if self.block_first and len(self.inputs) == 1:
-            await self.push_frame(LLMTextFrame("第一句。第二句。"))
-            await self.push_frame(LLMTextFrame("后续"))
+            if self.unspoken_first:
+                await self.push_frame(LLMTextFrame("这个尚未完整生成的开场"))
+            else:
+                await self.push_frame(LLMTextFrame("第一句。第二句。"))
+                await self.push_frame(LLMTextFrame("后续"))
+            self.first_blocked.set()
             try:
                 await asyncio.Event().wait()
             except asyncio.CancelledError:
@@ -99,11 +105,15 @@ class ControlledLLM(FrameProcessor):
 
 
 class ControlledTTS(CompatibleTTSService):
-    def __init__(self) -> None:
+    def __init__(
+        self, *, block_first: Literal["before_audio", "during_audio"] | None = None
+    ) -> None:
         super().__init__(
             TTSSettings(base_url="http://fixture.invalid/v1", model="fixture", voice="fixture")
         )
         self.requests: list[str] = []
+        self.block_first = block_first
+        self.first_blocked = asyncio.Event()
         self.cancelled = asyncio.Event()
 
     async def run_tts(self, text: str, context_id: str) -> AsyncGenerator[Frame, None]:
@@ -111,6 +121,16 @@ class ControlledTTS(CompatibleTTSService):
         marker = 2 if "第二句" in text else 1
         chunks = 50 if marker == 2 else 1
         try:
+            if self.block_first is not None and len(self.requests) == 1:
+                if self.block_first == "during_audio":
+                    yield TTSAudioRawFrame(
+                        audio=(3).to_bytes(2, "little") * 960,
+                        sample_rate=24000,
+                        num_channels=1,
+                        context_id=context_id,
+                    )
+                self.first_blocked.set()
+                await asyncio.Event().wait()
             for _ in range(chunks):
                 yield TTSAudioRawFrame(
                     audio=marker.to_bytes(2, "little") * 960,
@@ -131,6 +151,7 @@ class PlayedOutput(BaseOutputTransport):
         self.recorder = recorder
         self.started = asyncio.Event()
         self.second_audio = asyncio.Event()
+        self.audio_written = asyncio.Event()
         self.transcript_sent = asyncio.Event()
         self.played: list[int] = []
         self.server_messages: list[dict[str, Any]] = []
@@ -145,6 +166,7 @@ class PlayedOutput(BaseOutputTransport):
         await asyncio.sleep(0.02)
         marker = int.from_bytes(frame.audio[:2], "little")
         self.played.append(marker)
+        self.audio_written.set()
         if marker == 2:
             self.second_audio.set()
         return True
@@ -216,13 +238,17 @@ async def start_session(
     monkeypatch: pytest.MonkeyPatch,
     *,
     block_first: bool = False,
+    unspoken_first: bool = False,
+    tts_block_first: Literal["before_audio", "during_audio"] | None = None,
     opening: str = "",
     asr_timeout: float = 30.0,
 ) -> RunningSession:
     recorder = Recorder()
     transport = LocalTransport(recorder)
     services = FixtureServices(
-        Passthrough(), ControlledLLM(block_first=block_first), ControlledTTS()
+        Passthrough(),
+        ControlledLLM(block_first=block_first, unspoken_first=unspoken_first),
+        ControlledTTS(block_first=tts_block_first),
     )
     monkeypatch.setattr(voice_module, "create_services", lambda settings: services)
     monkeypatch.setattr(voice_module, "SmallWebRTCTransport", lambda **kwargs: transport)
@@ -521,3 +547,96 @@ async def test_hangup_discards_pending_user_turn_without_new_model_request(
     finally:
         if not running.task.done():
             await running.close()
+
+
+@pytest.mark.parametrize("tts_stage", ["before_audio", "during_audio"])
+async def test_interrupt_fixed_opening_before_complete_sentence_never_resumes(
+    monkeypatch: pytest.MonkeyPatch,
+    tts_stage: Literal["before_audio", "during_audio"],
+) -> None:
+    opening = "您好，我是 AI 助手，想和您介绍订阅计划。"
+    running = await start_session(monkeypatch, opening=opening, tts_block_first=tts_stage)
+    try:
+        await running.ready()
+        await asyncio.wait_for(running.services.tts.first_blocked.wait(), timeout=3)
+        if tts_stage == "before_audio":
+            assert running.transport.outgoing.played == []
+        else:
+            await asyncio.wait_for(running.transport.outgoing.audio_written.wait(), timeout=3)
+            assert running.transport.outgoing.played
+            assert set(running.transport.outgoing.played) == {3}
+        assert running.services.tts.requests == [opening]
+        assert running.services.llm.inputs == []
+
+        await running.frame(VADUserStartedSpeakingFrame())
+        await asyncio.wait_for(running.services.tts.cancelled.wait(), timeout=3)
+        await wait_messages(running.recorder, 1)
+        assert running.recorder.messages[0].text == ""
+        assert running.recorder.messages[0].interrupted
+        old_audio_count = len(running.transport.outgoing.played)
+        await running.frame(VADUserStoppedSpeakingFrame(stop_secs=0.6))
+        await running.frame(TranscriptionFrame("", "user", "empty", finalized=True))
+        await wait_state(running, "listening")
+        await running.ready()
+        await asyncio.sleep(0.1)
+        assert len(running.transport.outgoing.played) == old_audio_count
+        assert running.services.tts.requests == [opening]
+        assert running.services.llm.inputs == []
+        if tts_stage == "before_audio":
+            assert old_audio_count == 0
+
+        await running.frame(VADUserStartedSpeakingFrame())
+        await running.frame(VADUserStoppedSpeakingFrame(stop_secs=0.6))
+        await running.frame(TranscriptionFrame("先说价格。", "user", "valid", finalized=True))
+        await wait_messages(running.recorder, 3)
+        assert len(running.services.llm.inputs) == 1
+        next_context = running.services.llm.inputs[0]
+        assert all(opening not in str(message) for message in next_context)
+        assert all(message["role"] != "assistant" for message in next_context)
+        assert next_context[-1] == {"role": "user", "content": "先说价格。"}
+        assert running.services.tts.requests == [opening, "新的回答。"]
+        assert running.transport.outgoing.played[old_audio_count:]
+        assert set(running.transport.outgoing.played[old_audio_count:]) == {1}
+    finally:
+        await running.close()
+
+
+async def test_interrupt_llm_text_before_any_tts_never_enters_spoken_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    running = await start_session(monkeypatch, block_first=True, unspoken_first=True)
+    try:
+        await running.ready()
+        await asyncio.wait_for(running.services.llm.first_blocked.wait(), timeout=3)
+        assert len(running.services.llm.inputs) == 1
+        assert running.services.tts.requests == []
+        assert running.transport.outgoing.played == []
+
+        await running.frame(VADUserStartedSpeakingFrame())
+        await asyncio.wait_for(running.services.llm.cancelled.wait(), timeout=3)
+        await wait_messages(running.recorder, 1)
+        assert running.recorder.messages[0].text == ""
+        assert running.recorder.messages[0].interrupted
+        await running.frame(VADUserStoppedSpeakingFrame(stop_secs=0.6))
+        await running.frame(TranscriptionFrame("", "user", "empty", finalized=True))
+        await wait_state(running, "listening")
+        await running.ready()
+        await asyncio.sleep(0.1)
+        assert len(running.services.llm.inputs) == 1
+        assert running.services.tts.requests == []
+        assert running.transport.outgoing.played == []
+
+        await running.frame(VADUserStartedSpeakingFrame())
+        await running.frame(VADUserStoppedSpeakingFrame(stop_secs=0.6))
+        await running.frame(TranscriptionFrame("先说价格。", "user", "valid", finalized=True))
+        await wait_messages(running.recorder, 3)
+        assert len(running.services.llm.inputs) == 2
+        next_context = running.services.llm.inputs[1]
+        assert all("尚未完整生成的开场" not in str(message) for message in next_context)
+        assert all(message["role"] != "assistant" for message in next_context)
+        assert next_context[-1] == {"role": "user", "content": "先说价格。"}
+        assert running.services.tts.requests == ["新的回答。"]
+        assert running.transport.outgoing.played
+        assert set(running.transport.outgoing.played) == {1}
+    finally:
+        await running.close()

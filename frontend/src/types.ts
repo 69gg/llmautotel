@@ -40,6 +40,11 @@ export interface CallRecord {
   transcript: TranscriptEntry[];
 }
 
+export interface CallSummary extends Omit<CallRecord, 'settings' | 'transcript'> {
+  goal: string;
+  message_count: number;
+}
+
 export interface CallConnection {
   webrtcRequestParams: { endpoint: string };
   iceConfig: { iceServers: RTCIceServer[] };

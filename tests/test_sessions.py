@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -130,3 +131,30 @@ async def test_restart_finalizes_crashed_calls_and_preserves_history(tmp_path: P
         assert client.get("/api/calls/active").json() is None
     with TestClient(create_app(RuntimeConfig(data_dir=tmp_path))) as client:
         assert client.get("/api/calls/crashed-call").json() == recovered
+
+
+def test_history_storage_never_contains_keys_and_delete_preserves_configuration(
+    tmp_path: Path,
+) -> None:
+    runtime = RuntimeConfig(data_dir=tmp_path)
+    settings = configured_settings()
+    settings.tts.api_key = settings.asr.api_key
+    with TestClient(create_app(runtime)) as client:
+        client.put("/api/settings", json=settings.private())
+        first = client.post("/api/calls").json()["call"]
+        client.post(f"/api/calls/{first['id']}/end")
+        second = client.post("/api/calls").json()["call"]
+        client.post(f"/api/calls/{second['id']}/end")
+        with sqlite3.connect(tmp_path / "app.sqlite3") as connection:
+            rows = connection.execute("SELECT body FROM calls").fetchall()
+        assert len(rows) == 2
+        assert all("SECRET" not in row[0] and '"api_key":' not in row[0] for row in rows)
+        summaries = client.get("/api/calls").json()
+        assert [record["id"] for record in summaries] == [second["id"], first["id"]]
+        assert all("settings" not in record and "transcript" not in record for record in summaries)
+        assert client.delete(f"/api/calls/{first['id']}").status_code == 204
+        assert client.delete(f"/api/calls/{first['id']}").status_code == 404
+        assert client.get(f"/api/calls/{second['id']}").status_code == 200
+        assert all(client.get("/api/settings").json()[stage]["api_key_set"] for stage in (
+            "asr", "llm", "tts"
+        ))

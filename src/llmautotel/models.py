@@ -32,6 +32,10 @@ class ProviderSettings(StrictModel):
         parsed = urlsplit(value)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname:
             raise ValueError("API 地址须使用 http 或 https")
+        try:
+            parsed.port
+        except ValueError:
+            raise ValueError("API 地址中的端口须为有效数字，范围为 0 至 65535") from None
         if parsed.username or parsed.password or parsed.query or parsed.fragment:
             raise ValueError("API 地址不能包含凭据、查询参数或片段；请单独填写密钥")
         return value

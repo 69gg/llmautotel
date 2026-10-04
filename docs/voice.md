@@ -14,6 +14,8 @@ Silero VAD 在本机 CPU 检测开口，默认连续语音 0.1 秒确认开始�
 
 普通 OpenAI 兼容 PCM TTS 无词时间戳，因此上下文和文字历史采用句级提交：完整播放的句子进入下一轮上下文，正在播放的半句在打断时舍弃。打断标记仍然保存，可能出现正文为空的中断记录。不能由音频长度准确推算用户已听到哪些字。固定开场也通过同样机制提交。
 
+`tests/test_voice.py` 使用真实 Pipecat 管线、官方音频输出队列和实际 TTS 适配器验证分阶段打断：LLM 仅生成未完整句子、固定开场 TTS 尚未返回音频、固定开场仅播放半句，以及完整第一句后第二句播放期间。测试检查旧生成任务被取消、输出音频计数停止增长、空转写不会续播开场、下一次 LLM 上下文只包含已完整播放内容。这些测试替换模型网络响应和最后设备写入；真实麦克风、扬声器及实际模型服务仍需浏览器联调验收。
+
 模型请求失败时发送按 ASR / LLM / TTS 分类的中文提示，取消本通会话，保留已提交文字；提示不包含上游响应、密钥或原始异常。挂断和浏览器断开同样取消管线，释放连接和三个模型客户端。取消之前清除尚未完成的用户转写聚合，避免 Pipecat 1.12.0 的默认取消收尾把它交给 LLM；已提交用户文字和助手完整播放句子仍保留，挂断时助手的中断标记照常收尾。应用保存文字历史，不保存录音。
 
 相关依据：[Pipecat 打断机制](https://docs.pipecat.ai/pipecat/fundamentals/interruptions)、[会话初始化](https://docs.pipecat.ai/pipecat/learn/session-initialization)、[1.12.0 回合结束策略](https://github.com/pipecat-ai/pipecat/blob/v1.12.0/src/pipecat/turns/user_stop/speech_timeout_user_turn_stop_strategy.py)、[1.12.0 TTS 句级文本处理](https://github.com/pipecat-ai/pipecat/blob/v1.12.0/src/pipecat/services/tts_service.py)。
