@@ -65,6 +65,10 @@ class FakeFreeSwitch:
         self.rate = b"8000"
         self.password = "test-esl-password"
         self.call_id = ""
+        self.create_delay = 0.0
+        self.create_never = False
+        self.active_calls: set[str] = set()
+        self.originate_jobs: set[asyncio.Task[None]] = set()
         self.writer: asyncio.StreamWriter | None = None
         self.peer: tuple[str, int] | None = None
         self.client_closed = asyncio.Event()
@@ -131,6 +135,15 @@ class FakeFreeSwitch:
             await asyncio.sleep(0.01)
             self.udp.sendto(PCM, self.peer)
 
+    async def create_channel(self) -> None:
+        # 后台作业独立于 ESL 连接：关闭控制连接不能取消已接受的 originate。
+        await asyncio.sleep(self.create_delay)
+        self.active_calls.add(self.call_id)
+        if self.writer is not None and not self.writer.is_closing():
+            await self.event("CHANNEL_CREATE")
+            if self.auto_answer:
+                await self.event("CHANNEL_ANSWER")
+
     async def handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         task = asyncio.current_task()
         assert task is not None
@@ -160,9 +173,16 @@ class FakeFreeSwitch:
                     match = re.search(r"origination_uuid=([^,]+)", command)
                     assert match is not None
                     self.call_id = match[1]
-                    # 通话事件可先于 originate 的命令响应到达。
-                    if self.auto_answer:
-                        await self.event("CHANNEL_ANSWER")
+                    if self.create_delay:
+                        job = asyncio.create_task(self.create_channel())
+                        self.originate_jobs.add(job)
+                        job.add_done_callback(self.originate_jobs.discard)
+                    elif not self.create_never:
+                        self.active_calls.add(self.call_id)
+                        # 通话事件可先于 originate 的命令响应到达。
+                        await self.event("CHANNEL_CREATE")
+                        if self.auto_answer:
+                            await self.event("CHANNEL_ANSWER")
                     await self.packet(
                         {"Content-Type": "command/reply", "Reply-Text": "+OK Job-UUID: test-job"}
                     )
@@ -180,7 +200,14 @@ class FakeFreeSwitch:
                     if self.send_media:
                         await self.media_frames()
                 elif command.startswith("api uuid_kill"):
-                    await self.packet({"Content-Type": "api/response"}, b"+OK\n")
+                    call_id = command.split()[2]
+                    if call_id in self.active_calls:
+                        self.active_calls.discard(call_id)
+                        await self.packet({"Content-Type": "api/response"}, b"+OK\n")
+                    else:
+                        await self.packet(
+                            {"Content-Type": "api/response"}, b"-ERR No such channel!\n"
+                        )
                 else:
                     raise AssertionError(f"unexpected command: {command}")
         finally:
@@ -199,6 +226,7 @@ class FakeFreeSwitch:
         if self.udp is not None:
             self.udp.close()
         tasks = list(self.tasks)
+        tasks += list(self.originate_jobs)
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -322,6 +350,7 @@ async def test_non_8k_codec_ends_instead_of_mislabeled_audio(freeswitch: FakeFre
         await asyncio.wait_for(log.failed.wait(), timeout=1)
         assert "8 kHz" in log.errors[0]
         assert not log.ready.is_set()
+        await driver.close()
         assert any(command.startswith("api uuid_kill") for command in freeswitch.commands)
     finally:
         await driver.close()
@@ -373,6 +402,7 @@ async def test_media_timeout_hangs_up_and_reports_audio_stage(freeswitch: FakeFr
         await driver.start("13800138000", str(uuid4()))
         await asyncio.wait_for(log.failed.wait(), timeout=2)
         assert "未收到可信的音频" in log.errors[0]
+        await driver.close()
         assert any(command.startswith("api uuid_kill") for command in freeswitch.commands)
     finally:
         await driver.close()
@@ -409,6 +439,7 @@ async def test_control_disconnect_ends_active_call(freeswitch: FakeFreeSwitch) -
         await asyncio.wait_for(log.failed.wait(), timeout=1)
         assert "连接已断开" in log.errors[0]
         assert driver._terminal
+        await driver.close()
         # 断开 inbound ESL 不会让 park 电话自动结束；新控制连接只挂掉原 UUID。
         assert sum(command.startswith("auth ") for command in freeswitch.commands) == 2
         assert freeswitch.commands[-1] == f"api uuid_kill {freeswitch.call_id} NORMAL_CLEARING"
@@ -421,6 +452,45 @@ async def test_close_active_call_hangs_up_once(freeswitch: FakeFreeSwitch) -> No
     await driver.close()
     await driver.close()
     assert sum(command.startswith("api uuid_kill") for command in freeswitch.commands) == 1
+
+
+async def test_hangup_before_background_originate_creates_channel_leaves_no_call(
+    freeswitch: FakeFreeSwitch,
+) -> None:
+    freeswitch.auto_answer = False
+    freeswitch.create_delay = 0.05
+    driver = FreeSwitchDriver(freeswitch.settings(), CallbackLog().callbacks())
+    await driver.start("13800138000", str(uuid4()))
+    await driver.close()
+    await asyncio.sleep(0.08)
+    assert not freeswitch.active_calls
+    kills = [command for command in freeswitch.commands if command.startswith("api uuid_kill")]
+    assert len(kills) >= 2
+    assert set(kills) == {f"api uuid_kill {freeswitch.call_id} NORMAL_CLEARING"}
+    assert sum(command.startswith("bgapi") for command in freeswitch.commands) == 1
+    assert driver._hangup_confirmed and driver._closed
+
+
+async def test_pending_originate_cleanup_timeout_is_visible_and_releases_local_resources(
+    freeswitch: FakeFreeSwitch,
+) -> None:
+    freeswitch.auto_answer = False
+    freeswitch.create_never = True
+    driver = FreeSwitchDriver(
+        freeswitch.settings(cleanup_timeout_seconds=1), CallbackLog().callbacks()
+    )
+    await driver.start("13800138000", str(uuid4()))
+    with pytest.raises(TelephonyError, match="未确认电话挂断"):
+        await driver.close()
+    assert driver._closed
+    assert driver._udp is not None and driver._udp.is_closing()
+    assert driver._esl is not None and driver._esl._closed
+    assert not driver._hangup_confirmed
+    assert sum(command.startswith("bgapi") for command in freeswitch.commands) == 1
+    attempts = len(freeswitch.commands)
+    with pytest.raises(TelephonyError, match="未确认电话挂断"):
+        await driver.close()
+    assert len(freeswitch.commands) == attempts  # 不重复清理预算，也不隐藏未确认状态。
 
 
 async def test_start_cancellation_releases_parked_call(freeswitch: FakeFreeSwitch) -> None:

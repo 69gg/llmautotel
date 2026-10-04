@@ -29,7 +29,7 @@ from pipecat.processors.aggregators.llm_response_universal import (
     UserTurnStoppedMessage,
 )
 from pipecat.processors.frameworks.rtvi import RTVIObserverParams, RTVIProcessor
-from pipecat.transports.base_transport import TransportParams
+from pipecat.transports.base_transport import BaseTransport, TransportParams
 from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
 from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 from pipecat.turns.types import ProcessFrameResult
@@ -134,15 +134,18 @@ def sales_prompt(settings: AppSettings) -> str:
 
 
 class VoiceSession:
-    """一个 WebRTC 连接对应一份上下文、一组模型和一个管线。"""
+    """一通会话对应一份上下文、一组模型和一个管线，传输可注入。"""
 
     def __init__(
         self,
-        connection: SmallWebRTCConnection,
+        connection: SmallWebRTCConnection | None,
         settings: AppSettings,
         callbacks: VoiceCallbacks,
+        *,
+        transport: BaseTransport | None = None,
     ) -> None:
         self._connection = connection
+        self._transport = transport
         self._settings = settings.model_copy(deep=True)
         self._callbacks = callbacks
         self._worker: PipelineWorker | None = None
@@ -183,20 +186,20 @@ class VoiceSession:
                 }
             )
 
-    async def _fail(self, message: str) -> None:
+    async def _fail(self, message: str, *, reason: str = "model_error") -> None:
         if self._error_reported or self._reason is not None:
             return
         self._error_reported = True
-        self._reason = "model_error"
+        self._reason = reason
         if self._user_aggregator is not None:
             # Pipecat 1.12.0 cancel 会运行用户缓存；故障时丢弃未完整识别回合。
             await self._user_aggregator.reset()
         await self._callbacks.on_error(message)
         if self._worker is not None:
             await self._worker.rtvi.send_server_message({"type": "error", "message": message})
-            await self._worker.cancel(reason="model_error")
+            await self._worker.cancel(reason=reason)
 
-    async def _open_conversation(self, rtvi: RTVIProcessor) -> None:
+    async def _open_conversation(self, source: RTVIProcessor | BaseTransport) -> None:
         if self._opened or self._reason is not None:
             return
         self._opened = True
@@ -227,10 +230,15 @@ class VoiceSession:
             return self._reason
         try:
             self._services = create_services(self._settings)
-            transport = SmallWebRTCTransport(
-                webrtc_connection=self._connection,
-                params=TransportParams(audio_in_enabled=True, audio_out_enabled=True),
-            )
+            if self._transport is not None:
+                transport = self._transport
+            else:
+                if self._connection is None:
+                    raise ValueError("语音会话缺少传输连接")
+                transport = SmallWebRTCTransport(
+                    webrtc_connection=self._connection,
+                    params=TransportParams(audio_in_enabled=True, audio_out_enabled=True),
+                )
             context = LLMContext([{"role": "system", "content": sales_prompt(self._settings)}])
             conversation = InterruptedResponseContext(context)
             self._conversation = conversation
@@ -291,7 +299,18 @@ class VoiceSession:
                 idle_timeout_secs=None,
             )
             self._worker = worker
-            worker.rtvi.add_event_handler("on_client_ready", self._open_conversation)
+            if self._transport is None:
+                worker.rtvi.add_event_handler("on_client_ready", self._open_conversation)
+            else:
+                transport.add_event_handler("on_client_connected", self._open_conversation)
+
+                @transport.event_handler("on_error")
+                async def on_transport_error(transport: BaseTransport, message: str) -> None:
+                    if self._reason is not None:
+                        # 清理失败仍需可见，但不覆盖已确认的用户/AI挂断原因。
+                        await self._callbacks.on_error(message)
+                    else:
+                        await self._fail(message, reason="transport_error")
 
             @user.event_handler("on_user_turn_started")
             async def on_user_started(
@@ -356,10 +375,11 @@ class VoiceSession:
 
             @transport.event_handler("on_client_disconnected")
             async def on_disconnected(
-                transport: SmallWebRTCTransport, connection: SmallWebRTCConnection
+                transport: BaseTransport, connection: SmallWebRTCConnection | str | None = None
             ) -> None:
                 if self._reason is None:
-                    await self.stop("disconnected")
+                    reason = connection if isinstance(connection, str) else "disconnected"
+                    await self.stop(reason)
 
             runner = WorkerRunner(handle_sigint=False, handle_sigterm=False)
             await runner.add_workers(worker)
@@ -370,8 +390,12 @@ class VoiceSession:
             # 不将异常对象、上游响应或 traceback 交给日志 / 网页。
             await self._fail("语音会话启动或运行失败，请检查模型配置后重试。")
         finally:
-            if self._services is not None:
-                await self._services.aclose()
+            try:
+                if self._transport is not None:
+                    await self._transport.cleanup()
+            finally:
+                if self._services is not None:
+                    await self._services.aclose()
         return self._reason or "disconnected"
 
     async def stop(self, reason: str = "hangup") -> None:
@@ -383,5 +407,7 @@ class VoiceSession:
             await self._user_aggregator.reset()
         if self._worker is not None:
             await self._worker.cancel(reason=self._reason)
-        else:
+        elif self._transport is not None:
+            await self._transport.cleanup()
+        elif self._connection is not None:
             await self._connection.disconnect()

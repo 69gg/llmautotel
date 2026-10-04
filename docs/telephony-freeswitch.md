@@ -29,6 +29,7 @@ FreeSWITCH 需要加载 `mod_event_socket`，在 `event_socket.conf.xml` 配置�
 | `caller_id` | 线路方准许的主叫号码 |
 | `ring_timeout_seconds` | 振铃等待时间，默认 45 秒 |
 | `media_timeout_seconds` | 接听后等待首包音频时间，默认 10 秒 |
+| `cleanup_timeout_seconds` | 停止后台外呼和确认挂断的总等待预算，默认 5 秒，范围 1–10 秒 |
 | `fs_media_host` | FreeSWITCH 用于绑定 unicast 的实际 IPv4 地址，必须从应用可达 |
 | `fs_media_port` | FreeSWITCH 主机上预留的 UDP 端口；默认 0 表示未配置，启用时必须填写 |
 | `audio_bind_host` | 应用接收音频的本地 IPv4 绑定地址；同机默认 `127.0.0.1`，跨主机时选对应专网网卡或 `0.0.0.0` |
@@ -47,13 +48,15 @@ FS 的 `local-ip/local-port` 指 **FreeSWITCH** 地址；`remote-ip/remote-port`
 3. 仅处理对应 UUID 的接听、挂断和 originate 后台结果，忽略其他通话事件。
 4. 收到接听事件后验证 `read_rate`、启用 unicast。只有收到首个可信 PCM 包才触发媒体就绪与 AI 开场。
 5. 公共 Pipecat transport 负责 ASR 输入重采样、TTS 输出重采样和实时发送节奏；provider 直接发送 PCM，不保留长播放队列。打断取消公共 transport 的旧音频任务，provider `flush()` 撤销播放等待，迟到的旧音频由公共 transport 的回合隔离阻挡。
-6. 告别完成后等待末包音频时长及配置的媒体尾部时间，再 `uuid_kill ... NORMAL_CLEARING`。对方挂断、忙线、无人接听、媒体超时和 ESL 断连均结束会话并释放连接。关闭活动 driver 和启动中取消也会尝试挂断；若原 ESL 已断开，则新建短时控制连接，只挂断本会话 UUID，避免 `park()` 的电话失去控制后继续占线。若 FreeSWITCH 完全不可达，远端挂断只能尽力执行，管理员仍应检查遗留通道。
+6. 告别完成后等待末包音频时长及配置的媒体尾部时间，再 `uuid_kill ... NORMAL_CLEARING`。对方挂断、忙线、无人接听、媒体超时和 ESL 断连均结束会话并释放连接。关闭活动 driver 和启动中取消也会尝试挂断；若原 ESL 已断开，则新建短时控制连接，只挂断本会话 UUID，避免 `park()` 的电话失去控制后继续占线。
+
+`bgapi` 的 `+OK Job-UUID` 只说明后台任务已接受，通道可能稍后才创建。挂断时第一次 `No such channel` 不能视为成功：应用保留事件读取，跟踪同 UUID 的 `CHANNEL_CREATE` 与 `BACKGROUND_JOB`，在清理预算内继续尝试挂断同一通话，不重新拨号。已观察到该通道创建、后台任务完成或远端结束后，才能确认不存在遗留通道。若 FreeSWITCH 完全不可达或后台作业超出预算，界面显示挂断未获确认；本机仍释放 UDP、ESL 和后台任务，管理员应检查遗留通道。一次清理失败不会在随后 `close()` 中重新累计整个等待预算。
 
 **播放进度的边界：**原生 unicast 没有用户手机侧的播放确认。`wait_played()` 根据末包发送时间和 `playback_tail_seconds` 等待，只能确认应用侧的发送节奏与尾部等待；不能保证用户逐字听完。UDP 无法撤回已发出的一包音频，打断后停止的是后续音频。实际手机停音、告别完整度以及 500 ms 停音目标仍需线路与设备实测，不能用模拟测试冒充。
 
 ## 协议测试与来源
 
-`uv run pytest tests/test_telephony_freeswitch.py` 启动可控本地 TCP ESL 与 UDP PCM 对端，验证认证、实际 originate 网关和号码、事件与响应交错、双向 PCM、来源过滤、采样率校验、打断取消播放等待、挂断、媒体超时、后台外呼失败和资源释放。不会拨打真实号码或使用真实模型。
+`uv run pytest tests/test_telephony_freeswitch.py` 启动可控本地 TCP ESL 与 UDP PCM 对端，验证认证、实际 originate 网关和号码、事件与响应交错、双向 PCM、来源过滤、采样率校验、打断取消播放等待、挂断、媒体超时、后台外呼失败和资源释放。后台外呼模拟任务独立于 ESL 连接，覆盖确认接受后立即挂断、50 ms 后才创建通道的竞态及清理超时。不会拨打真实号码或使用真实模型。
 
 - [FreeSWITCH 官方 Event Socket 说明](https://developer.signalwire.com/freeswitch/integration/event-socket/)
 - [v1.10.12：原生 unicast、UDP 收发、`sendmsg` 解析](https://github.com/signalwire/freeswitch/blob/v1.10.12/src/switch_ivr.c)

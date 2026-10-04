@@ -106,7 +106,9 @@ class _ESLConnection:
             with suppress(asyncio.QueueFull):
                 self.events.put_nowait(None)
 
-    async def command(self, command: str, *, timeout: float = 10) -> _ESLFrame:
+    async def command(
+        self, command: str, *, timeout: float = 10, allow_error: bool = False
+    ) -> _ESLFrame:
         async with self._lock:
             if self._closed or self._failed:
                 raise TelephonyError("FreeSWITCH ESL 连接已关闭")
@@ -118,7 +120,7 @@ class _ESLConnection:
                 response = result.headers.get("reply-text", "") or result.body.decode(
                     "utf-8", errors="replace"
                 )
-                if response.startswith("-ERR"):
+                if response.startswith("-ERR") and not allow_error:
                     raise TelephonyError("FreeSWITCH 拒绝电话控制命令")
                 return result
             except BaseException:
@@ -191,6 +193,14 @@ class FreeSwitchDriver:
         self._started = False
         self._originate_sent = False
         self._hangup_requested = False
+        self._hangup_confirmed = False
+        self._hangup_lock = asyncio.Lock()
+        self._close_lock = asyncio.Lock()
+        self._hangup_failure: TelephonyError | None = None
+        self._closing = False
+        self._channel_created = asyncio.Event()
+        self._originate_done = asyncio.Event()
+        self._remote_ended = asyncio.Event()
         self._call_id = ""
         self._last_sent_at = 0.0
         self._generation = 0
@@ -242,7 +252,7 @@ class FreeSwitchDriver:
             )
             self._tasks.append(asyncio.create_task(self._events()))
             await self._esl.command(
-                "event plain CHANNEL_ANSWER CHANNEL_HANGUP_COMPLETE BACKGROUND_JOB"
+                "event plain CHANNEL_CREATE CHANNEL_ANSWER CHANNEL_HANGUP_COMPLETE BACKGROUND_JOB"
             )
             self._tasks.append(asyncio.create_task(self._audio()))
             self._tasks.append(asyncio.create_task(self._watchdog()))
@@ -259,12 +269,16 @@ class FreeSwitchDriver:
                 f"sofia/gateway/{self.settings.gateway}/{number} &park()"
             )
         except BaseException:
-            await self.hangup()
             await self.close()
             raise
 
     async def _activate_media(self) -> None:
-        if self._esl is None or self._udp is None or self._answered.is_set():
+        if (
+            self._esl is None
+            or self._udp is None
+            or self._answered.is_set()
+            or self._hangup_requested
+        ):
             return
         # 后续原生 PCM codec 的速率取决于通话 codec；这里只接受 8k PCMA/PCMU。
         rate = await self._esl.command(f"api uuid_getvar {self._call_id} read_rate")
@@ -280,34 +294,43 @@ class FreeSwitchDriver:
         )
         self._answered.set()
 
-    async def _events(self) -> None:
-        assert self._esl is not None
+    async def _events(self, connection: _ESLConnection | None = None) -> None:
+        connection = connection or self._esl
+        assert connection is not None
         try:
             while not self._closed:
-                frame = await self._esl.events.get()
+                frame = await connection.events.get()
                 if frame is None:
-                    if not self._terminal:
+                    if not self._terminal and not self._hangup_requested:
                         await self._fail("FreeSWITCH 电话控制连接已断开")
                     return
                 event = _event_headers(frame)
                 if event.get("Event-Name") == "BACKGROUND_JOB":
                     if self._call_id in event.get("Job-Command-Arg", ""):
+                        self._originate_done.set()
                         _, _, body = frame.body.partition(b"\n\n")
                         if body.strip().startswith(b"-ERR"):
+                            self._remote_ended.set()
                             cause = (
                                 body.strip()
                                 .removeprefix(b"-ERR")
                                 .strip()
                                 .decode("utf-8", errors="replace")
                             )
-                            await self._ended(self._end_reason(cause))
+                            if not self._hangup_requested:
+                                await self._ended(self._end_reason(cause))
                     continue
                 if event.get("Unique-ID") != self._call_id:
                     continue
-                if event.get("Event-Name") == "CHANNEL_ANSWER":
+                if event.get("Event-Name") == "CHANNEL_CREATE":
+                    self._channel_created.set()
+                elif event.get("Event-Name") == "CHANNEL_ANSWER":
+                    self._channel_created.set()
                     await self._activate_media()
                 elif event.get("Event-Name") == "CHANNEL_HANGUP_COMPLETE":
-                    await self._ended(self._end_reason(event.get("Hangup-Cause", "")))
+                    self._remote_ended.set()
+                    if not self._hangup_requested:
+                        await self._ended(self._end_reason(event.get("Hangup-Cause", "")))
                     return
         except asyncio.CancelledError:
             raise
@@ -333,7 +356,7 @@ class FreeSwitchDriver:
                 if audio is None:
                     await self._fail("FreeSWITCH 媒体连接错误或接收队列过载")
                     return
-                if not self._answered.is_set():
+                if not self._answered.is_set() or self._hangup_requested or self._closing:
                     continue
                 if not self._ready.is_set():
                     self._ready.set()
@@ -350,13 +373,11 @@ class FreeSwitchDriver:
                 self._answered.wait(), timeout=self.settings.ring_timeout_seconds + 5
             )
         except TimeoutError:
-            await self.hangup()
             await self._ended("no_answer")
             return
         try:
             await asyncio.wait_for(self._ready.wait(), timeout=self.settings.media_timeout_seconds)
         except TimeoutError:
-            await self.hangup()
             await self._fail("FreeSWITCH 已接听但未收到可信的音频，检查媒体地址和端口")
 
     async def _ended(self, reason: str) -> None:
@@ -364,18 +385,32 @@ class FreeSwitchDriver:
             return
         self._terminal = True
         await self.callbacks.on_ended(reason)
-        await self.close()
+        await self._close_after_terminal()
 
     async def _fail(self, message: str) -> None:
         if self._terminal or self._closed:
             return
         self._terminal = True
-        await self.hangup()
-        await self.callbacks.on_error(message)
-        await self.close()
+        try:
+            await self.callbacks.on_error(message)
+        finally:
+            await self._close_after_terminal()
+
+    async def _close_after_terminal(self) -> None:
+        try:
+            await self.close()
+        except TelephonyError as exc:
+            # driver 独立运行时同样暴露清理未确认；外层 transport 仍会最终 close。
+            await self.callbacks.on_error(str(exc))
 
     async def send_audio(self, audio: bytes) -> None:
-        if self._closed or self._terminal or not self._ready.is_set() or self._udp is None:
+        if (
+            self._closed
+            or self._terminal
+            or self._hangup_requested
+            or not self._ready.is_set()
+            or self._udp is None
+        ):
             return
         if not audio or len(audio) % 2 or len(audio) > 3200:
             raise TelephonyError("FreeSWITCH 音频必须为不超过 200 ms 的 PCM16 单声道数据")
@@ -408,44 +443,78 @@ class FreeSwitchDriver:
 
     async def hangup(self) -> None:
         await self.flush()
-        if self._hangup_requested or not self._originate_sent or self._closed:
-            return
-        self._hangup_requested = True
-        connection = self._esl
-        temporary: _ESLConnection | None = None
-        try:
-            if connection is None or connection._failed or connection._closed:
-                # Inbound ESL 断开不会自动挂掉已经 park 的电话；重新鉴权只清理本会话。
-                assert self.settings.password is not None
-                temporary = await asyncio.wait_for(
-                    _ESLConnection.connect(
-                        self.settings.host,
-                        self.settings.port,
-                        self.settings.password.get_secret_value(),
-                    ),
-                    timeout=3,
-                )
-                connection = temporary
-            await connection.command(f"api uuid_kill {self._call_id} NORMAL_CLEARING", timeout=3)
-        except Exception:
-            # 网络彻底不可达时挂断是 best effort，不把密码或上游响应暴露给客户端。
-            pass
-        finally:
-            if temporary is not None:
-                await temporary.close()
+        async with self._hangup_lock:
+            if self._hangup_failure is not None:
+                raise self._hangup_failure
+            if self._hangup_confirmed or not self._originate_sent or self._closed:
+                return
+            self._hangup_requested = True
+            connection = self._esl
+            temporary: _ESLConnection | None = None
+            event_task: asyncio.Task[None] | None = None
+            try:
+                async with asyncio.timeout(self.settings.cleanup_timeout_seconds):
+                    if connection is None or connection._failed or connection._closed:
+                        # Inbound ESL 断开不会自动挂掉 park 电话；只重连清理原 UUID。
+                        assert self.settings.password is not None
+                        temporary = await _ESLConnection.connect(
+                            self.settings.host,
+                            self.settings.port,
+                            self.settings.password.get_secret_value(),
+                        )
+                        connection = temporary
+                        await connection.command(
+                            "event plain CHANNEL_CREATE CHANNEL_ANSWER "
+                            "CHANNEL_HANGUP_COMPLETE BACKGROUND_JOB"
+                        )
+                        event_task = asyncio.create_task(self._events(connection))
+                    while not self._hangup_confirmed:
+                        if self._remote_ended.is_set():
+                            self._hangup_confirmed = True
+                            break
+                        result = await connection.command(
+                            f"api uuid_kill {self._call_id} NORMAL_CLEARING", allow_error=True
+                        )
+                        reply = result.body.strip()
+                        if reply.startswith(b"+OK"):
+                            self._hangup_confirmed = True
+                        elif reply.startswith(b"-ERR No such channel"):
+                            if self._channel_created.is_set() or self._originate_done.is_set():
+                                self._hangup_confirmed = True
+                            else:
+                                # bgapi +OK 仅接受任务；通道可能稍后才创建。保留 reader，
+                                # 在有限预算内重试同 UUID，绝不重新 originate。
+                                await asyncio.sleep(0.05)
+                        else:
+                            raise TelephonyError("FreeSWITCH 未确认电话挂断，请检查遗留通道")
+            except Exception as exc:
+                self._hangup_failure = TelephonyError("FreeSWITCH 未确认电话挂断，请检查遗留通道")
+                raise self._hangup_failure from exc
+            finally:
+                if event_task is not None:
+                    event_task.cancel()
+                    await asyncio.gather(event_task, return_exceptions=True)
+                if temporary is not None:
+                    await temporary.close()
 
     async def close(self) -> None:
-        if self._closed:
-            return
-        if not self._terminal:
-            await self.hangup()
-        self._closed = True
-        await self.flush()
-        if self._udp is not None:
-            self._udp.close()
-        tasks = [task for task in self._tasks if task is not asyncio.current_task()]
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
-        if self._esl is not None:
-            await self._esl.close()
+        async with self._close_lock:
+            if self._closed:
+                if self._hangup_failure is not None:
+                    raise self._hangup_failure
+                return
+            self._closing = True
+            try:
+                if not self._remote_ended.is_set():
+                    await self.hangup()
+            finally:
+                self._closed = True
+                await self.flush()
+                if self._udp is not None:
+                    self._udp.close()
+                tasks = [task for task in self._tasks if task is not asyncio.current_task()]
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+                if self._esl is not None:
+                    await self._esl.close()
