@@ -4,7 +4,7 @@ import type { CallRecord, CallSummary } from '../types';
 import { duration } from './CallPage';
 import { Icon } from './Icon';
 
-const reasons: Record<string, string> = { user_hangup: '用户挂断', connection_lost: '连接中断', disconnected: '连接中断', connection_timeout: '连接超时', server_shutdown: '服务关闭', server_restarted: '服务重新启动', model_error: '模型请求失败', internal_error: '服务处理异常' };
+const reasons: Record<string, string> = { user_hangup: '用户挂断', ai_hangup: 'AI 确认结束', connection_lost: '连接中断', disconnected: '连接中断', connection_timeout: '连接超时', server_shutdown: '服务关闭', server_restarted: '服务重新启动', model_error: '模型请求失败', internal_error: '服务处理异常' };
 const statuses: Record<string, string> = { connecting: '连接中', active: '通话中', ended: '已结束', failed: '异常结束' };
 const isActive = (call: CallSummary | CallRecord) => ['connecting', 'active'].includes(call.status);
 const time = (value: string) => new Date(value).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });

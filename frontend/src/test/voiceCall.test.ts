@@ -138,6 +138,82 @@ describe('语音会话生命周期', () => {
     await test.controller.end();
   });
 
+  it('AI 正常结束先保留告别尾音，断开时释放设备并采用服务端最终记录', async () => {
+    const media = playback();
+    const saved = deferred<CallRecord>();
+    const endCall = vi.fn<VoiceDependencies['endCall']>().mockReturnValue(saved.promise);
+    const test = setup({ endCall });
+    test.controller.attachAudio(media.audio as unknown as HTMLAudioElement);
+    await test.controller.start();
+    const { callbacks, client, track } = test.clients[0];
+    const remote = { kind: 'audio', stop: vi.fn() } as unknown as MediaStreamTrack;
+    callbacks.onTrackStarted?.(remote);
+    callbacks.onBotStartedSpeaking?.();
+    callbacks.onServerMessage?.({ type: 'call-ended', reason: 'ai_hangup' });
+    callbacks.onServerMessage?.({ type: 'call-ended', reason: 'ai_hangup' });
+    callbacks.onBotStoppedSpeaking?.();
+    callbacks.onServerMessage?.({ type: 'state', state: 'listening' });
+    expect(test.controller.getSnapshot().state).toBe('ending');
+    expect(test.controller.getSnapshot().error).toBe('');
+    expect(media.audio.srcObject?.getAudioTracks()).toEqual([remote]);
+    expect(media.audio.pause).not.toHaveBeenCalled();
+    expect(track.stop).not.toHaveBeenCalled();
+    expect(client.disconnect).not.toHaveBeenCalled();
+    expect(endCall).not.toHaveBeenCalled();
+
+    callbacks.onDisconnected?.();
+    callbacks.onDisconnected?.();
+    expect(media.audio.pause).toHaveBeenCalledOnce();
+    expect(media.audio.srcObject).toBeNull();
+    expect(track.stop).toHaveBeenCalled();
+    expect(remote.stop).toHaveBeenCalled();
+    expect(media.close).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(endCall).toHaveBeenCalledWith('call-1', 'connection_lost'));
+    expect(endCall).toHaveBeenCalledOnce();
+    await test.controller.start();
+    expect(test.startCall).toHaveBeenCalledOnce();
+
+    const goodbye = { role: 'assistant' as const, text: '好的，祝您顺利，再见。', timestamp: '2026-10-04T09:00:09Z', interrupted: false };
+    const final = { ...record, ended_at: '2026-10-04T09:00:10Z', status: 'ended', end_reason: 'ai_hangup', transcript: [goodbye] };
+    saved.resolve(final);
+    await vi.waitFor(() => expect(test.controller.getSnapshot().state).toBe('ended'));
+    expect(test.controller.getSnapshot().error).toBe('');
+    expect(test.controller.getSnapshot().call).toEqual(final);
+    expect(test.controller.getSnapshot().transcript).toEqual([goodbye]);
+    expect(client.disconnect).toHaveBeenCalledOnce();
+  });
+
+  it('已收到 AI 正常结束的连接关闭错误不会显示异常提示', async () => {
+    const test = setup();
+    await test.controller.start();
+    const callbacks = test.clients[0].callbacks;
+    callbacks.onServerMessage?.({ type: 'call-ended', reason: 'ai_hangup' });
+    callbacks.onError?.({ message: 'transport closing' } as never);
+    await vi.waitFor(() => expect(test.controller.getSnapshot().state).toBe('ended'));
+    expect(test.controller.getSnapshot().error).toBe('');
+    expect(test.endCall).toHaveBeenCalledWith('call-1', 'connection_lost');
+  });
+
+  it('未知结束原因和旧连接的结束消息不能把当前意外断连标记为正常结束', async () => {
+    const test = setup();
+    await test.controller.start();
+    const old = test.clients[0].callbacks;
+    old.onServerMessage?.({ type: 'call-ended', reason: 'ai_hangup' });
+    old.onDisconnected?.();
+    await vi.waitFor(() => expect(test.controller.getSnapshot().state).toBe('ended'));
+    await test.controller.start();
+    old.onServerMessage?.({ type: 'call-ended', reason: 'ai_hangup' });
+    old.onDisconnected?.();
+    const current = test.clients[1].callbacks;
+    for (const reason of ['user_hangup', 'future_reason', null]) current.onServerMessage?.({ type: 'call-ended', reason });
+    expect(test.controller.getSnapshot().state).toBe('listening');
+    expect(test.clients[1].track.stop).not.toHaveBeenCalled();
+    current.onDisconnected?.();
+    await vi.waitFor(() => expect(test.controller.getSnapshot().state).toBe('ended'));
+    expect(test.controller.getSnapshot().error).toBe('语音连接已断开，可以重新开始。');
+    expect(test.endCall).toHaveBeenCalledTimes(2);
+  });
+
   it('旧连接迟到的状态、音量、文字和音轨不污染新连接', async () => {
     const test = setup();
     await test.controller.start();

@@ -38,6 +38,7 @@ interface Session {
   live: boolean;
   id: string | null;
   reason: EndReason;
+  serverEnded: boolean;
   tracks: Set<MediaStreamTrack>;
   creation?: Promise<StartCallResult>;
   finishing?: Promise<void>;
@@ -137,11 +138,13 @@ export class VoiceCallController {
     this.update({ ...initialSnapshot, state: 'connecting' });
     let session: Session;
     const current = () => this.session === session && session.live;
-    const change = (value: Partial<VoiceSnapshot>) => { if (current()) this.update(value); };
+    const change = (value: Partial<VoiceSnapshot>) => {
+      if (current()) this.update(session.serverEnded ? { ...value, state: 'ending', userSpeaking: false } : value);
+    };
     const callbacks: RTVIEventCallbacks = {
       onBotReady: () => change({ state: 'listening' }),
-      onDisconnected: () => { if (current()) void this.finish(session, '语音连接已断开，可以重新开始。', 'connection_lost'); },
-      onError: () => { if (current()) void this.finish(session, '语音连接异常，请重新开始。', 'connection_lost'); },
+      onDisconnected: () => { if (current()) void this.finish(session, session.serverEnded ? '' : '语音连接已断开，可以重新开始。', 'connection_lost'); },
+      onError: () => { if (current()) void this.finish(session, session.serverEnded ? '' : '语音连接异常，请重新开始。', 'connection_lost'); },
       onDeviceError: () => { if (current()) void this.finish(session, '无法使用麦克风，请检查浏览器授权和设备连接。', 'connection_lost'); },
       onLocalAudioLevel: level => change({ localLevel: Math.max(0, Math.min(1, level)) }),
       onRemoteAudioLevel: level => change({ remoteLevel: Math.max(0, Math.min(1, level)) }),
@@ -161,9 +164,13 @@ export class VoiceCallController {
       },
       onServerMessage: (message: unknown) => {
         if (!current() || !message || typeof message !== 'object') return;
-        const data = message as { type?: string; state?: string; entry?: unknown; message?: unknown };
+        const data = message as { type?: string; state?: string; entry?: unknown; message?: unknown; reason?: unknown };
         if (data.type === 'transcript' && isTranscript(data.entry)) {
           change({ transcript: [...this.snapshot.transcript, data.entry] });
+        } else if (data.type === 'call-ended' && data.reason === 'ai_hangup') {
+          // Let the server finish the goodbye audio before its transport disconnects.
+          session.serverEnded = true;
+          change({ state: 'ending', userSpeaking: false });
         } else if (data.type === 'state') {
           if (data.state === 'ended') void this.finish(session, '', 'connection_lost');
           else if (['listening', 'recognizing', 'thinking', 'speaking'].includes(data.state ?? '')) change({ state: data.state as CallState });
@@ -179,7 +186,7 @@ export class VoiceCallController {
       this.update({ state: 'ended', error: '初始化语音设备失败，请刷新页面后重试。' });
       return;
     }
-    session = { client, id: null, live: true, reason: 'user_hangup', tracks: new Set() };
+    session = { client, id: null, live: true, reason: 'user_hangup', serverEnded: false, tracks: new Set() };
     this.session = session;
     try {
       await client.initDevices();

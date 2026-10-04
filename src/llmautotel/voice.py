@@ -9,6 +9,7 @@ from typing import Literal
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.frames.frames import (
+    EndFrame,
     Frame,
     LLMRunFrame,
     TranscriptionFrame,
@@ -39,6 +40,7 @@ from pipecat.turns.user_turn_strategies import UserTurnStrategies
 from pipecat.workers.runner import WorkerRunner
 
 from llmautotel.conversation import InterruptedResponseContext
+from llmautotel.hangup import HANGUP_POLICY, HangupController
 from llmautotel.models import AppSettings
 from llmautotel.providers import ProviderServices, create_services
 
@@ -108,7 +110,8 @@ def sales_prompt(settings: AppSettings) -> str:
         "上下文中标注的 AI 生成背景是被打断、尚未完整播放的草稿，"
         "可用于理解用户指代，但不能假定用户已听到，也不要自动续讲。\n"
         "只依据提供的产品资料介绍事实，不编造价格、优惠、保障或购买结果。\n"
-        "用户明确拒绝或要求结束时尊重其意愿，简短结束，不持续施压。\n"
+        "用户明确拒绝时尊重其意愿，不持续施压；是否结束通话以明确发言为准。\n"
+        f"{HANGUP_POLICY}"
         f"{opening_rule}\n\n"
         f"销售目标：\n{sales.goal}\n\n"
         f"产品资料：\n{sales.product_info}\n\n"
@@ -195,6 +198,15 @@ class VoiceSession:
         else:
             await self._worker.queue_frame(LLMRunFrame())
 
+    async def _hang_up_after_goodbye(self) -> None:
+        if self._reason is not None or self._worker is None:
+            return
+        self._reason = "ai_hangup"
+        # 先让会话管理器锁定原因，避免客户端断连的 REST 收尾覆盖 AI 正常结束。
+        await self._callbacks.on_state("ending")
+        await self._worker.rtvi.send_server_message({"type": "call-ended", "reason": "ai_hangup"})
+        await self._worker.queue_frame(EndFrame(reason="ai_hangup"))
+
     async def run(self) -> str:
         """运行到挂断、断开或模型失败，始终释放模型客户端。"""
         if self._reason is not None:
@@ -208,6 +220,8 @@ class VoiceSession:
             context = LLMContext([{"role": "system", "content": sales_prompt(self._settings)}])
             conversation = InterruptedResponseContext(context)
             self._conversation = conversation
+            hangup = HangupController(context, conversation, self._hang_up_after_goodbye)
+            context.set_tools(hangup.tools())
             user, assistant = LLMContextAggregatorPair(
                 context,
                 user_params=LLMUserAggregatorParams(
@@ -244,6 +258,7 @@ class VoiceSession:
                     self._services.tts,
                     transport.output(),
                     conversation.output(),
+                    hangup,
                     assistant,
                 ]
             )
@@ -328,7 +343,8 @@ class VoiceSession:
             async def on_disconnected(
                 transport: SmallWebRTCTransport, connection: SmallWebRTCConnection
             ) -> None:
-                await self.stop("disconnected")
+                if self._reason is None:
+                    await self.stop("disconnected")
 
             runner = WorkerRunner(handle_sigint=False, handle_sigterm=False)
             await runner.add_workers(worker)

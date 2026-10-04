@@ -37,6 +37,7 @@ describe('工作台导航', () => {
     render(<App />);
     const button = await screen.findByRole('button', { name: '开始通话' });
     expect(button).toBeDisabled();
+    expect(screen.getByText('完整播放的文字会保留，打断前的生成内容用于下一轮背景')).toBeInTheDocument();
     await user.click(button);
     expect(start).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: '语音通话' })).toHaveAttribute('aria-label', '语音通话');

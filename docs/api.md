@@ -28,6 +28,8 @@ API 根地址必须使用 HTTP / HTTPS、有效端口，不包含 URL 凭据、�
 
 结束接口可省略 body，默认原因为 `user_hangup`；也可发送 `{ "reason": "connection_lost" }`。已有结束原因不被后到请求覆盖。SDK 状态与已提交文字通过 RTVI 数据通道同步，见 [语音管线](voice.md)。
 
+AI 基于明确用户意愿调用服务端 `hang_up` 工具后，告别输出完成才发出 RTVI `{ "type": "call-ended", "reason": "ai_hangup" }` 并优雅断开。客户端先标记正常结束，等待断连后释放麦克风并用现有结束接口取最终记录。`ai_hangup` 由服务端生成，不增加客户端可提交的结束原因；断连收尾不会覆盖它。意思不明确时保持会话、继续销售对话，不询问用户是否要挂断。
+
 会话状态为 `connecting`、`active`、`ended` 或 `failed`。历史详细记录包含 `id`、`started_at`、`ended_at`、`status`、`end_reason`、`settings`、`transcript`。文字项包含 `role`、`text`、`timestamp`、`interrupted`。中断项可能没有正文，表示正在播放的半句未计入已说内容；生成稿会以“未完整播放”的背景保留在本通模型上下文，不写为完整播放的历史正文。记录不含录音或密钥。
 
 未完成连接的预留槽位默认 30 秒后释放，可通过 `LLMAUTOTEL_CONNECTION_TIMEOUT_SECONDS` 配置。正常退出会结束活动会话；意外终止后再次启动会将未结束的历史标为 `failed` / `server_restarted`。

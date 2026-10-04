@@ -192,7 +192,12 @@ class SessionManager:
 
         async def on_state(state: str) -> None:
             async with self._lock:
-                if self._active is active and not active.closing and state != "ended":
+                if self._active is not active:
+                    return
+                if state == "ending":
+                    active.closing = True
+                    active.requested_reason = active.requested_reason or "ai_hangup"
+                elif not active.closing and state != "ended":
                     active.record.status = "active"
                     await self.store.save_call(active.record)
 
@@ -240,7 +245,7 @@ class SessionManager:
                     return
                 active.record.ended_at = now()
                 active.record.status = "failed" if active.error else "ended"
-                active.record.end_reason = active.error or reason
+                active.record.end_reason = active.error or active.requested_reason or reason
                 await self.store.save_call(active.record)
                 self._active = None
                 if active.watchdog and active.watchdog is not asyncio.current_task():

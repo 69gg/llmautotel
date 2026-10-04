@@ -42,6 +42,15 @@ describe('本机文字历史', () => {
     expect(screen.queryByText('api_key')).not.toBeInTheDocument();
   });
 
+  it('AI 挂断记录显示确认结束原因', async () => {
+    vi.spyOn(api, 'calls').mockResolvedValue([{ ...summary, end_reason: 'ai_hangup' }]);
+    vi.spyOn(api, 'call').mockResolvedValue({ ...record, end_reason: 'ai_hangup' });
+    render(<HistoryPage />);
+    await ready();
+    expect(screen.getByText('AI 确认结束')).toBeInTheDocument();
+    expect(screen.queryByText('连接中断')).not.toBeInTheDocument();
+  });
+
   it('确认框可以取消，取消不发删除请求', async () => {
     const user = userEvent.setup();
     mockRecords();

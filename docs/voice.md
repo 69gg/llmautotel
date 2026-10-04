@@ -30,4 +30,16 @@ Silero VAD 在本机 CPU 检测开口，默认连续语音 0.1 秒确认开始�
 
 模型请求失败时发送按 ASR / LLM / TTS 分类的中文提示，取消本通会话，保留已提交文字；提示不包含上游响应、密钥或原始异常。挂断和浏览器断开同样取消管线，释放连接和三个模型客户端。取消之前清除尚未完成的用户转写聚合，避免 Pipecat 1.12.0 的默认取消收尾把它交给 LLM；已提交用户文字和助手完整播放句子仍保留，挂断时助手的中断标记照常收尾。应用保存文字历史，不保存录音。
 
+## AI 挂断工具
+
+上下文向文本模型提供 `hang_up(confirmed, evidence, goodbye)` 工具。模型只在最新用户发言明确要求结束或明确不需要继续介绍时调用；例如“不用了，谢谢”“请挂断”。价格抱怨、犹豫、沉默、单纯拒绝购买或拒绝后继续提问，均不能推断为结束。意思不明确时继续回应和推销，不询问是否挂断。工具要求 `confirmed=true`，`evidence` 完整引用最新用户原文，`goodbye` 为带祝福的简短结束回复，例如“好的，祝您生活愉快，再见”，由模型自然生成，完整输出后才挂断。服务端校验参数类型、原文一致、当前 VAD 和请求代次，不接受旧用户证据、编造证据或重复候选；语义判断由模型依据该规则完成，不使用关键词猜测挂断。
+
+工具复用官方 `FunctionSchema(handler=...)` 自动注册，使用默认可打断行为。成功结果设置 `FunctionCallResultProperties(run_llm=False)`，避免模型另生成告别。随后将 `TTSSpeakFrame` 和普通、可打断的 `HangupAfterPlaybackFrame` 顺序送入 TTS；Pipecat 1.12.0 的串行队列与传输音频队列保证标记在告别音频之后到达输出端。输出后的 `HangupController` 再次核对证据和代次，才提交不可打断的 `EndFrame`。因此不会在 TTS 请求或音频尚在输出时提前挂断；用户在告别期间插话会清除候选，旧标记或迟到工具流不能结束新的对话回合。
+
+输出端可能晚收到触发当前工具的 VAD 开始/打断帧，不能仅因该帧到达就清除当前候选。清理以 LLM 前同步更新的用户状态和代次为准：仍对应当前已停止发言的用户回合时保留候选，真正的新发言使代次失效时撤销。真实 WebRTC 回归曾复现该竞争，修复不依赖延时等待。
+
+挂断确定后先让会话管理器在锁内保存 `ai_hangup` 意图，再发送 `{type: "call-ended", reason: "ai_hangup"}`，最后优雅结束管线。网页收到消息先显示“正在结束”，等待 WebRTC 断开后释放设备并读取最终记录，不把正常关闭显示为连接异常。最终保存原因优先取已确定的原因，避免浏览器断连的 REST 收尾将 `ai_hangup` 覆盖为 `connection_lost`。用户主动挂断和故障仍可直接取消，不等待排队音频。
+
+`tests/test_hangup.py` 使用实际 LLM SDK 工具 SSE 与官方 TTS / 音频队列，覆盖工具请求参数、告别生成完但尚未输出完、合成等待与播放中插话、旧工具流迟到、无效证据、重复工具/标记、旧回合标记和 SQLite 收尾竞态。前端回归覆盖正常结束标记、保留播放直到服务器断连、资源释放、迟到消息隔离及历史结束原因。服务端输出队列完成不等于逐字设备播放确认，真实扬声器尾音仍需设备验收。
+
 相关依据：[Pipecat 打断机制](https://docs.pipecat.ai/pipecat/fundamentals/interruptions)、[会话初始化](https://docs.pipecat.ai/pipecat/learn/session-initialization)、[1.12.0 回合结束策略](https://github.com/pipecat-ai/pipecat/blob/v1.12.0/src/pipecat/turns/user_stop/speech_timeout_user_turn_stop_strategy.py)、[1.12.0 TTS 句级文本处理](https://github.com/pipecat-ai/pipecat/blob/v1.12.0/src/pipecat/services/tts_service.py)。
