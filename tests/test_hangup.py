@@ -44,13 +44,15 @@ from llmautotel.sessions import SessionManager, VoiceRuntime
 from llmautotel.store import Store
 from llmautotel.voice import VoiceCallbacks, VoiceSession
 
-USER_END = "不用了，谢谢。"
+USER_END = "请结束通话，谢谢。"
 GOODBYE = "好的，祝您一切顺利，再见。"
 FOLLOW_UP = "等一下，我还想了解它有什么功能？"
 NEW_ANSWER = "它可以回答问题和整理文字。"
 
 
-def tool_response(arguments: dict[str, Any], *, tool_id: str = "hangup-1") -> bytes:
+def tool_response(
+    arguments: dict[str, Any], *, tool_id: str = "hangup-1", function_name: str = "hang_up",
+) -> bytes:
     """通过实际 SDK 的 SSE 解析进入 Pipecat 工具执行器。"""
     chunk = {
         "id": "fixture-tool-reply",
@@ -64,7 +66,7 @@ def tool_response(arguments: dict[str, Any], *, tool_id: str = "hangup-1") -> by
                 "id": tool_id,
                 "type": "function",
                 "function": {
-                    "name": "hang_up",
+                    "name": function_name,
                     "arguments": json.dumps(arguments, ensure_ascii=False),
                 },
             }]},
@@ -83,7 +85,7 @@ class DelayedToolSSE(httpx2.AsyncByteStream):
 
     async def __aiter__(self) -> AsyncIterator[bytes]:
         yield tool_response({
-            "confirmed": True, "evidence": USER_END, "goodbye": GOODBYE,
+            "intent": "direct_exit", "confirmed": True, "evidence": USER_END, "goodbye": GOODBYE,
         }).removesuffix(b"data: [DONE]\n\n")
         self.waiting.set()
         try:
@@ -173,7 +175,8 @@ async def running_hangup(
             )
         content = (
             tool_response(arguments or {
-                "confirmed": True, "evidence": USER_END, "goodbye": GOODBYE,
+                "intent": "direct_exit", "confirmed": True,
+                "evidence": USER_END, "goodbye": GOODBYE,
             })
             if len(requests) == 1
             else sse_text(NEW_ANSWER) + b"data: [DONE]\n\n"
@@ -225,7 +228,7 @@ async def test_real_sdk_hangup_tool_waits_until_goodbye_audio_finishes(
         schema = next(tool for tool in request["tools"] if tool["function"]["name"] == "hang_up")
         assert schema["type"] == "function"
         parameters = schema["function"]["parameters"]
-        assert set(parameters["required"]) == {"confirmed", "evidence", "goodbye"}
+        assert set(parameters["required"]) == {"intent", "confirmed", "evidence", "goodbye"}
         assert parameters["properties"]["confirmed"]["type"] == "boolean"
         assert request["messages"][-1] == {"role": "user", "content": USER_END}
         assert await asyncio.wait_for(running.task, timeout=3) == "ai_hangup"
@@ -326,7 +329,8 @@ def controller_fixture(
     params = FunctionCallParams(
         function_name="hang_up",
         tool_call_id="hangup-unit",
-        arguments={"confirmed": True, "evidence": USER_END, "goodbye": GOODBYE},
+        arguments={"intent": "direct_exit", "confirmed": True,
+                   "evidence": USER_END, "goodbye": GOODBYE},
         llm=cast(Any, SimpleNamespace(push_frame=AsyncMock())),
         pipeline_worker=cast(PipelineWorker, object()),
         context=context,
@@ -338,13 +342,14 @@ def controller_fixture(
 @pytest.mark.parametrize(
     "arguments",
     [
-        {"confirmed": False, "evidence": USER_END, "goodbye": GOODBYE},
-        {"confirmed": "true", "evidence": USER_END, "goodbye": GOODBYE},
-        {"evidence": USER_END, "goodbye": GOODBYE},
-        {"confirmed": True, "evidence": "", "goodbye": GOODBYE},
-        {"confirmed": True, "evidence": "用户之前说过再见。", "goodbye": GOODBYE},
-        {"confirmed": True, "evidence": USER_END, "goodbye": ""},
-        {"confirmed": True, "evidence": USER_END, "goodbye": None},
+        {"intent": "direct_exit", "confirmed": False, "evidence": USER_END, "goodbye": GOODBYE},
+        {"intent": "direct_exit", "confirmed": "true", "evidence": USER_END, "goodbye": GOODBYE},
+        {"intent": "direct_exit", "evidence": USER_END, "goodbye": GOODBYE},
+        {"intent": "direct_exit", "confirmed": True, "evidence": "", "goodbye": GOODBYE},
+        {"intent": "direct_exit", "confirmed": True,
+         "evidence": "用户之前说过再见。", "goodbye": GOODBYE},
+        {"intent": "direct_exit", "confirmed": True, "evidence": USER_END, "goodbye": ""},
+        {"intent": "direct_exit", "confirmed": True, "evidence": USER_END, "goodbye": None},
     ],
     ids=["not-confirmed", "string-confirmed", "missing-confirmation", "empty-evidence",
          "stale-evidence", "empty-goodbye", "invalid-goodbye"],

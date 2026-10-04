@@ -66,7 +66,7 @@ async def test_real_webrtc_ai_tool_hangup_preserves_goodbye_and_releases_call_sl
 ) -> None:
     requests: list[dict[str, Any]] = []
     bundles: list[HangupServices] = []
-    evidence = "不用了，谢谢。"
+    evidence = "请结束通话，谢谢。"
     goodbye = "好的，祝您一切顺利，再见。"
     opening = "您好，我是测试 AI。"
 
@@ -90,6 +90,7 @@ async def test_real_webrtc_ai_tool_hangup_preserves_goodbye_and_releases_call_sl
                                     "name": "hang_up",
                                     "arguments": json.dumps(
                                         {
+                                            "intent": "direct_exit",
                                             "confirmed": True,
                                             "evidence": evidence,
                                             "goodbye": goodbye,
