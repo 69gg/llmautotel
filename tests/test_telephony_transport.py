@@ -403,6 +403,7 @@ async def phone_voice(
     monkeypatch.setattr(voice_module, "create_services", lambda _: services)
     recorder = Recorder()
     settings = AppSettings()
+    settings.conversation.mode = "sales"
     settings.sales.goal = "让用户考虑预约演示"
     settings.sales.product_info = "产品可以整理客户资料。"
     settings.sales.opening = opening

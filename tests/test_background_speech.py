@@ -179,6 +179,7 @@ async def speech_harness(
         ),
     )
     settings = AppSettings()
+    settings.conversation.mode = "sales"
     settings.sales.goal = "让用户了解订阅"
     settings.sales.product_info = "可以解释知识和整理资料。"
     settings.sales.opening = OPENING

@@ -116,6 +116,7 @@ async def test_interrupted_function_request_uses_latest_price_question_in_real_s
     monkeypatch.setattr(voice_module, "create_services", lambda settings: services)
     monkeypatch.setattr(voice_module, "SmallWebRTCTransport", lambda **kwargs: transport)
     settings = AppSettings()
+    settings.conversation.mode = "sales"
     settings.sales.goal = "让用户订阅测试计划"
     settings.sales.product_info = "测试计划价格每月10元，支持文字问答。"
     settings.sales.opening = "您好，请问您想了解什么？"

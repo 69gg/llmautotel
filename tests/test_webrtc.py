@@ -232,6 +232,7 @@ async def wait_transcript(peer: ClientPeer) -> dict[str, Any]:
 def configured_settings(opening: str) -> AppSettings:
     return AppSettings.model_validate(
         {
+            "conversation": {"mode": "sales"},
             "sales": {
                 "goal": "介绍本机测试订阅",
                 "product_info": "测试订阅每月十元",
