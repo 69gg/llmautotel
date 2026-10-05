@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from llmautotel.telephony.base import MediaCallbacks, TelephonyError
+from llmautotel.telephony.incoming import IncomingCall, IncomingCallbacks
 
 if TYPE_CHECKING:
     from llmautotel.telephony.settings import FreeswitchSettings
@@ -179,14 +180,22 @@ class FreeSwitchDriver:
 
     sample_rate = 8000
 
-    def __init__(self, settings: FreeswitchSettings, callbacks: MediaCallbacks) -> None:
+    def __init__(
+        self,
+        settings: FreeswitchSettings,
+        callbacks: MediaCallbacks,
+        *,
+        incoming: IncomingCall | None = None,
+    ) -> None:
         self.settings = settings.model_copy(deep=True)
         self.callbacks = callbacks
+        self._incoming = incoming
         self._esl: _ESLConnection | None = None
         self._udp: asyncio.DatagramTransport | None = None
         self._queue: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=256)
         self._tasks: list[asyncio.Task[None]] = []
         self._answered = asyncio.Event()
+        self._activate_lock = asyncio.Lock()
         self._ready = asyncio.Event()
         self._closed = False
         self._terminal = False
@@ -211,14 +220,22 @@ class FreeSwitchDriver:
             raise TelephonyError("FreeSWITCH provider 尚未启用")
         if not self.settings.host or self.settings.password is None:
             raise TelephonyError("请配置 FreeSWITCH ESL 地址和密码")
-        if not re.fullmatch(r"[A-Za-z0-9_.-]+", self.settings.gateway):
-            raise TelephonyError("请配置有效的 FreeSWITCH SIP gateway 名称")
-        if not re.fullmatch(r"\+?[0-9]{3,32}", number):
-            raise TelephonyError("被叫号码格式无效")
-        if not re.fullmatch(r"\+?[0-9]{1,32}", self.settings.caller_id):
-            raise TelephonyError("请配置有效的外呼主叫号码")
+        if self._incoming is not None:
+            if (
+                self._incoming.provider != "freeswitch"
+                or not self.settings.inbound_enabled
+                or self.settings.missing_inbound_fields()
+            ):
+                raise TelephonyError("FreeSWITCH 入呼未启用或配置不完整")
+        else:
+            if not re.fullmatch(r"[A-Za-z0-9_.-]+", self.settings.gateway):
+                raise TelephonyError("请配置有效的 FreeSWITCH SIP gateway 名称")
+            if not re.fullmatch(r"\+?[0-9]{3,32}", number):
+                raise TelephonyError("被叫号码格式无效")
+            if not re.fullmatch(r"\+?[0-9]{1,32}", self.settings.caller_id):
+                raise TelephonyError("请配置有效的外呼主叫号码")
         try:
-            UUID(call_id)
+            UUID(self._incoming.remote_id if self._incoming else call_id)
             ipaddress.IPv4Address(self.settings.fs_media_host)
             ipaddress.IPv4Address(self.settings.audio_advertised_host)
         except ValueError as exc:
@@ -237,7 +254,11 @@ class FreeSwitchDriver:
             raise TelephonyError("电话 driver 已启动或关闭")
         self._validate(number, call_id)
         self._started = True
-        self._call_id = str(UUID(call_id))
+        self._call_id = str(UUID(self._incoming.remote_id if self._incoming else call_id))
+        if self._incoming:
+            # 已存在的 UUID 必须从启动起就可被清理，媒体握手失败也不能遗留来电。
+            self._originate_sent = True
+            self._channel_created.set()
         try:
             transport, _ = await asyncio.get_running_loop().create_datagram_endpoint(
                 lambda: _PCMReceiver(
@@ -256,6 +277,11 @@ class FreeSwitchDriver:
             )
             self._tasks.append(asyncio.create_task(self._audio()))
             self._tasks.append(asyncio.create_task(self._watchdog()))
+            if self._incoming is not None:
+                await self._esl.command(f"api uuid_answer {self._call_id}")
+                # 监听已先于 answer；额外查询兼容已接听后 park 的既有 SIP 路由。
+                await self._activate_media()
+                return
             # UUID 由本应用分配，后台任务和通话事件均按该 UUID 隔离。
             variables = (
                 f"origination_uuid={self._call_id},"
@@ -273,6 +299,10 @@ class FreeSwitchDriver:
             raise
 
     async def _activate_media(self) -> None:
+        async with self._activate_lock:
+            await self._activate_media_unlocked()
+
+    async def _activate_media_unlocked(self) -> None:
         if (
             self._esl is None
             or self._udp is None
@@ -518,3 +548,162 @@ class FreeSwitchDriver:
                 await asyncio.gather(*tasks, return_exceptions=True)
                 if self._esl is not None:
                     await self._esl.close()
+                if self._incoming is not None:
+                    if not self._started:
+                        await self._incoming.close()
+                    else:
+                        self._incoming.release()
+
+
+class FreeSwitchIncomingListener:
+    """监听专用入呼 park 路由；独立 ESL 连接不会抢占单通控制连接。"""
+
+    def __init__(self, settings: FreeswitchSettings, callbacks: IncomingCallbacks) -> None:
+        self.settings = settings.model_copy(deep=True)
+        self.callbacks = callbacks
+        self.connected = False
+        self.last_error: str | None = None
+        self._esl: _ESLConnection | None = None
+        self._worker: asyncio.Task[None] | None = None
+        self._admissions: set[asyncio.Task[None]] = set()
+        self._seen: set[str] = set()
+        self._closed = False
+
+    async def _connect(self) -> None:
+        assert self.settings.password is not None
+        self._esl = await _ESLConnection.connect(
+            self.settings.host, self.settings.port, self.settings.password.get_secret_value()
+        )
+        try:
+            await self._esl.command("event plain CHANNEL_PARK CHANNEL_HANGUP_COMPLETE")
+        except BaseException:
+            await self._esl.close()
+            raise
+        self.connected = True
+        self.last_error = None
+
+    async def start(self) -> None:
+        if self._worker is not None or self._closed:
+            raise TelephonyError("FreeSWITCH 来电监听器不能重复启动")
+        if not self.settings.enabled or not self.settings.inbound_enabled:
+            raise TelephonyError("FreeSWITCH 来电接听尚未启用")
+        if self.settings.missing_inbound_fields():
+            raise TelephonyError("FreeSWITCH 入呼配置不完整")
+        try:
+            await self._connect()
+        except Exception:
+            self.last_error = "FreeSWITCH 来电监听连接失败"
+            raise TelephonyError(self.last_error) from None
+        self._worker = asyncio.create_task(self._run())
+
+    async def _hangup(self, remote_id: str, reason: str) -> None:
+        connection = self._esl
+        temporary: _ESLConnection | None = None
+        try:
+            async with asyncio.timeout(self.settings.cleanup_timeout_seconds):
+                if connection is None or connection._closed or connection._failed:
+                    assert self.settings.password is not None
+                    temporary = await _ESLConnection.connect(
+                        self.settings.host,
+                        self.settings.port,
+                        self.settings.password.get_secret_value(),
+                    )
+                    connection = temporary
+                reply = await connection.command(
+                    f"api uuid_kill {remote_id} "
+                    + ("USER_BUSY" if reason == "busy" else "NORMAL_CLEARING"),
+                    allow_error=True,
+                )
+                if not reply.body.strip().startswith((b"+OK", b"-ERR No such channel")):
+                    raise TelephonyError("FreeSWITCH 来电拒接或清理失败")
+        except Exception:
+            raise TelephonyError("FreeSWITCH 来电拒接或清理失败") from None
+        finally:
+            if temporary is not None:
+                await temporary.close()
+
+    async def _admit(self, call: IncomingCall, *, allowed: bool) -> None:
+        try:
+            accepted = False if self._closed or not allowed else await self.callbacks.on_call(call)
+            if not accepted:
+                await call.reject()
+        except asyncio.CancelledError:
+            await call.close()
+            raise
+        except Exception:
+            with suppress(Exception):
+                await call.close()
+            await self.callbacks.on_error("FreeSWITCH 来电接管或拒接失败")
+
+    def _event(self, event: dict[str, str]) -> None:
+        remote_id = event.get("Unique-ID", "")
+        if (
+            self._closed
+            or event.get("Event-Name") != "CHANNEL_PARK"
+            or event.get("Call-Direction") != "inbound"
+            or event.get("variable_llmautotel_inbound") != self.settings.inbound_marker
+        ):
+            return
+        try:
+            remote_id = str(UUID(remote_id))
+        except ValueError:
+            return
+        if remote_id in self._seen:
+            return
+        self._seen.add(remote_id)
+        destination = event.get("Caller-Destination-Number", "")
+
+        async def hangup(reason: str) -> None:
+            await self._hangup(remote_id, reason)
+
+        call = IncomingCall(
+            "freeswitch",
+            remote_id,
+            event.get("Caller-Caller-ID-Number", ""),
+            destination,
+            hangup=hangup,
+        )
+        task = asyncio.create_task(
+            self._admit(
+                call,
+                allowed=not self.settings.inbound_numbers
+                or destination in self.settings.inbound_numbers,
+            )
+        )
+        self._admissions.add(task)
+        task.add_done_callback(self._admissions.discard)
+
+    async def _run(self) -> None:
+        try:
+            while not self._closed:
+                assert self._esl is not None
+                while not self._closed:
+                    frame = await self._esl.events.get()
+                    if frame is None:
+                        break
+                    self._event(_event_headers(frame))
+                self.connected = False
+                if self._closed:
+                    return
+                self.last_error = "FreeSWITCH 来电监听连接中断，正在重连"
+                with suppress(Exception):
+                    await self.callbacks.on_error(self.last_error)
+                while not self._closed:
+                    await asyncio.sleep(self.settings.inbound_reconnect_seconds)
+                    try:
+                        await self._connect()
+                        break
+                    except Exception:
+                        self.last_error = "FreeSWITCH 来电监听重连失败"
+        finally:
+            self.connected = False
+
+    async def close(self) -> None:
+        self._closed = True
+        self.connected = False
+        await asyncio.gather(*tuple(self._admissions), return_exceptions=True)
+        if self._worker is not None:
+            self._worker.cancel()
+            await asyncio.gather(self._worker, return_exceptions=True)
+        if self._esl is not None:
+            await self._esl.close()

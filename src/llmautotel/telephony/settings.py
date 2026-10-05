@@ -3,7 +3,7 @@
 from typing import Any, ClassVar, Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 
 def http_url(value: str) -> str:
@@ -26,6 +26,17 @@ class PhoneProviderSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     secret_fields: ClassVar[tuple[str, ...]] = ()
     enabled: bool = False
+    inbound_enabled: bool = False
+    inbound_numbers: list[str] = Field(default_factory=list)
+
+    @field_validator("inbound_numbers")
+    @classmethod
+    def validate_inbound_numbers(cls, value: list[str]) -> list[str]:
+        import re
+
+        if any(not re.fullmatch(r"\+?[0-9]{3,20}", number) for number in value):
+            raise ValueError("接听号码须仅包含 3 至 20 位数字及可选的开头加号")
+        return list(dict.fromkeys(value))
 
     @field_validator("caller_id", check_fields=False)
     @classmethod
@@ -39,6 +50,9 @@ class PhoneProviderSettings(BaseModel):
     def missing_fields(self) -> list[str]:
         return []
 
+    def missing_inbound_fields(self) -> list[str]:
+        return []
+
 
 class AsteriskSettings(PhoneProviderSettings):
     secret_fields: ClassVar[tuple[str, ...]] = ("password",)
@@ -46,6 +60,9 @@ class AsteriskSettings(PhoneProviderSettings):
     username: str = ""
     password: SecretStr | None = None
     app: str = "llmautotel"
+    incoming_app: str = "llmautotel-inbound"
+    inbound_marker: str = "llmautotel-inbound"
+    inbound_reconnect_seconds: float = Field(default=5, ge=1, le=60)
     endpoint_template: str = ""
     caller_id: str = ""
     ring_timeout_seconds: float = Field(default=45, ge=5, le=180)
@@ -53,6 +70,34 @@ class AsteriskSettings(PhoneProviderSettings):
     cleanup_timeout_seconds: float = Field(default=5, ge=1, le=30)
 
     _url = field_validator("ari_url")(http_url)
+
+    @field_validator("incoming_app", "inbound_marker")
+    @classmethod
+    def validate_inbound_identifier(cls, value: str) -> str:
+        import re
+
+        if not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", value):
+            raise ValueError("入呼应用及标识仅允许 1 至 80 位字母、数字、点、下划线和连字符")
+        return value
+
+    @model_validator(mode="after")
+    def separate_applications(self) -> "AsteriskSettings":
+        if self.inbound_enabled and self.app == self.incoming_app:
+            raise ValueError("入呼和外呼必须使用不同 ARI 应用名")
+        return self
+
+    def missing_inbound_fields(self) -> list[str]:
+        return [
+            label
+            for field, label in (
+                ("ari_url", "ARI 地址"),
+                ("username", "ARI 用户名"),
+                ("password", "ARI 密码"),
+                ("incoming_app", "入呼 ARI 应用名"),
+                ("inbound_marker", "入呼路由标识"),
+            )
+            if not getattr(self, field)
+        ]
 
     @field_validator("endpoint_template")
     @classmethod
@@ -98,6 +143,8 @@ class FreeswitchSettings(PhoneProviderSettings):
     password: SecretStr | None = None
     gateway: str = ""
     caller_id: str = ""
+    inbound_marker: str = "llmautotel-inbound"
+    inbound_reconnect_seconds: float = Field(default=5, ge=1, le=60)
     ring_timeout_seconds: float = Field(default=45, ge=5, le=180)
     media_timeout_seconds: float = Field(default=10, ge=1, le=60)
     cleanup_timeout_seconds: float = Field(default=5, ge=1, le=10)
@@ -116,6 +163,11 @@ class FreeswitchSettings(PhoneProviderSettings):
         if value and not re.fullmatch(r"[A-Za-z0-9_.-]+", value):
             raise ValueError("网关名称仅允许字母、数字、点、下划线和连字符")
         return value
+
+    @field_validator("inbound_marker")
+    @classmethod
+    def validate_inbound_marker(cls, value: str) -> str:
+        return AsteriskSettings.validate_inbound_identifier(value)
 
     @field_validator("fs_media_host", "audio_bind_host", "audio_advertised_host")
     @classmethod
@@ -137,6 +189,20 @@ class FreeswitchSettings(PhoneProviderSettings):
                 ("password", "ESL 密码"),
                 ("gateway", "SIP 网关名"),
                 ("caller_id", "主叫号码"),
+                ("fs_media_host", "FreeSWITCH 媒体地址"),
+                ("fs_media_port", "FreeSWITCH 媒体端口"),
+                ("audio_advertised_host", "应用媒体可达地址"),
+            )
+            if not getattr(self, field)
+        ]
+
+    def missing_inbound_fields(self) -> list[str]:
+        return [
+            label
+            for field, label in (
+                ("host", "ESL 主机"),
+                ("password", "ESL 密码"),
+                ("inbound_marker", "入呼路由标识"),
                 ("fs_media_host", "FreeSWITCH 媒体地址"),
                 ("fs_media_port", "FreeSWITCH 媒体端口"),
                 ("audio_advertised_host", "应用媒体可达地址"),
@@ -168,7 +234,24 @@ class AliyunSettings(CloudSettings):
     access_key_id: SecretStr | None = None
     access_key_secret: SecretStr | None = None
     app_id: str = ""
+    account_uid: str = ""
     session_timeout: int | None = Field(default=None, ge=600, le=3600)
+
+    def missing_inbound_fields(self) -> list[str]:
+        return [
+            label
+            for field, label in (
+                ("endpoint", "API 地址"),
+                ("region", "地域"),
+                ("access_key_id", "AccessKey ID"),
+                ("access_key_secret", "AccessKey Secret"),
+                ("account_uid", "阿里云账号 UID"),
+                ("app_id", "应用编码"),
+                ("gateway_token", "模型网关鉴权码"),
+                ("webhook_token", "入呼回调鉴权码"),
+            )
+            if not getattr(self, field)
+        ]
 
     def missing_fields(self) -> list[str]:
         return [
@@ -197,8 +280,25 @@ class TencentSettings(CloudSettings):
     secret_id: SecretStr | None = None
     secret_key: SecretStr | None = None
     sdk_app_id: int | None = Field(default=None, ge=1)
+    inbound_ai_agent_id: int | None = Field(default=None, ge=1)
     interrupt_speech_duration_ms: int | None = Field(default=None, ge=100, le=3000)
     vad_silence_ms: int | None = Field(default=None, ge=240, le=2000)
+
+    def missing_inbound_fields(self) -> list[str]:
+        return [
+            label
+            for field, label in (
+                ("endpoint", "API 地址"),
+                ("region", "地域"),
+                ("secret_id", "SecretId"),
+                ("secret_key", "SecretKey"),
+                ("sdk_app_id", "SdkAppId"),
+                ("inbound_ai_agent_id", "入呼 AI 智能体 ID"),
+                ("gateway_token", "模型网关鉴权码"),
+                ("webhook_token", "入呼回调鉴权码"),
+            )
+            if not getattr(self, field)
+        ]
 
     def missing_fields(self) -> list[str]:
         return [

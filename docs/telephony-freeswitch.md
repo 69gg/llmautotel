@@ -1,6 +1,6 @@
 # FreeSWITCH provider：ESL 与原生双向 PCM
 
-FreeSWITCH provider 默认关闭。配置并启用后才在显式发起电话时建立 ESL 和 UDP 连接；保存配置不会外呼。AI 使用现有 ASR、LLM、TTS、上下文和打断管线，电话音频由独立 transport 适配。
+FreeSWITCH provider 的总开关 `enabled` 与入呼开关 `inbound_enabled` 均默认关闭。两开关同时启用后才建立常驻来电 ESL 监听；仅启用总开关时保留原外呼行为，显式发起电话才建立单通 ESL 与 UDP。保存配置不会主动拨号。AI 使用现有 ASR、LLM、TTS、上下文和打断管线，电话音频由独立 transport 适配。
 
 ## 适用范围
 
@@ -22,7 +22,11 @@ FreeSWITCH 需要加载 `mod_event_socket`，在 `event_socket.conf.xml` 配置�
 
 | 字段 | 填写内容 |
 |---|---|
-| `enabled` | 默认 `false`，完成配置后主动启用 |
+| `enabled` | provider 总开关，默认 `false` |
+| `inbound_enabled` | 来电接听开关，默认关闭；与总开关同时启用才开始监听 |
+| `inbound_numbers` | 实际被叫号码白名单；留空接受专属路由的全部来电 |
+| `inbound_marker` | 专属路由变量 `llmautotel_inbound` 的值，默认 `llmautotel-inbound` |
+| `inbound_reconnect_seconds` | 来电 ESL 监听重连间隔，默认 5 秒 |
 | `host`、`port` | 应用可达的 ESL 地址与端口；默认端口 8021 |
 | `password` | ESL 密码，保存在服务端；回读只显示是否已设置 |
 | `gateway` | 客户已在 FreeSWITCH 配置的 SIP gateway 名称 |
@@ -41,6 +45,27 @@ FreeSWITCH 需要加载 `mod_event_socket`，在 `event_socket.conf.xml` 配置�
 
 FS 的 `local-ip/local-port` 指 **FreeSWITCH** 地址；`remote-ip/remote-port` 指 **应用** 地址，不能填反。应用将真实绑定的 `audio_bind_port` 写入 `remote-port`，所以本地端口为 0 时也能正确协商。
 
+## 接听 SIP 来电
+
+运营商、硬件网关或云通信供应商实际提供的 SIP 中继先接入客户的 FreeSWITCH。应用接管被专属 dialplan 路由到 `park` 的既有电话 UUID，**不发起 originate，不需要外呼 gateway 或 caller_id**；其余 ESL、媒体地址、端口和三组模型配置仍需完整。仅有云平台 HTTP 呼叫接口的账户，应使用相应云 provider；它不能直接替代 SIP 中继。
+
+管理员在实际承载业务号码的 context 添加专属路由，将业务号码和路由标识替换为真实配置。示例不会由本应用写入 PBX：
+
+```xml
+<extension name="llmautotel-inbound">
+  <condition field="destination_number" expression="^<业务号码>$">
+    <action application="set" data="llmautotel_inbound=<inbound_marker>"/>
+    <action application="park"/>
+  </condition>
+</extension>
+```
+
+路由在 `park()` 时保持未应答；成功取得本应用单通槽后才 `api uuid_answer <原来电 UUID>`。监听器订阅 `CHANNEL_PARK`，同时要求 `Call-Direction=inbound` 和 `variable_llmautotel_inbound` 等于配置标识。它不会接管未标记的其他 PBX 电话或本应用的外呼 park 通道；白名单按 `Caller-Destination-Number` 匹配。忙线以及专属路由中不匹配白名单的来电，执行 `uuid_kill <原 UUID> USER_BUSY` 拒接，不创建对话记录。[官方 Event Socket 文档](https://developer.signalwire.com/freeswitch/integration/event-socket/)、[v1.10.12 应答及挂断命令](https://github.com/signalwire/freeswitch/blob/v1.10.12/src/mod/applications/mod_commands/mod_commands.c)
+
+来电应在 SIP profile 的 codec 偏好中协商 PCMA/PCMU 或其他实际 8 kHz codec；具体 SIP profile 配置由 PBX 管理员确认。应答后读取真实 `read_rate=8000` 才开始原生 unicast，其他采样率立即报错并清理，不能只在 dialplan 写一个标签伪装采样率。来电沿用外呼的 PCM 传输、VAD、打断、上下文和告别后挂断。
+
+监听器与已接纳的单通分别建立 ESL 连接：监听器关闭不挂已有电话，单通自己管理原 UUID、媒体和收尾；媒体启动失败或会话后台任务尚未启动时取消，也只清理这个 UUID。监听断连按配置间隔重连，只等待新的 `CHANNEL_PARK`，不枚举、接听或重拨旧电话；同一 UUID 重复事件不再次接管。单通控制 ESL 断连时仍按原逻辑尝试清理已接纳的本应用电话，其他 PBX 电话不受影响。
+
 ## 呼叫、打断与挂断
 
 1. 先绑定应用媒体 UDP 端口，再认证 ESL、订阅电话事件。
@@ -57,6 +82,8 @@ FS 的 `local-ip/local-port` 指 **FreeSWITCH** 地址；`remote-ip/remote-port`
 ## 协议测试与来源
 
 `uv run pytest tests/test_telephony_freeswitch.py` 启动可控本地 TCP ESL 与 UDP PCM 对端，验证认证、实际 originate 网关和号码、事件与响应交错、双向 PCM、来源过滤、采样率校验、打断取消播放等待、挂断、媒体超时、后台外呼失败和资源释放。后台外呼模拟任务独立于 ESL 连接，覆盖确认接受后立即挂断、50 ms 后才创建通道的竞态及清理超时。不会拨打真实号码或使用真实模型。
+
+入呼协议测试使用多条真实本机 TCP ESL 连接与 UDP PCM，覆盖原 UUID 应答、双向音频、事件隔离、单次媒体启动、忙线拒接、白名单、重复事件、监听重连、监听关闭保留已有通话、任务启动前挂断，以及默认关闭不连接。真实 FreeSWITCH、供应商 SIP 入呼、号码路由、手机停音与告别播放仍待甲方测试线路验收。
 
 - [FreeSWITCH 官方 Event Socket 说明](https://developer.signalwire.com/freeswitch/integration/event-socket/)
 - [v1.10.12：原生 unicast、UDP 收发、`sendmsg` 解析](https://github.com/signalwire/freeswitch/blob/v1.10.12/src/switch_ivr.c)

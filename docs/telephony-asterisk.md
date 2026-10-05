@@ -1,8 +1,8 @@
 # Asterisk 电话 provider
 
-本 provider 用 Asterisk 的 ARI 发起 SIP 外呼，并用原生 `chan_websocket` 双向传输音频。既有 ASR、LLM、TTS、提示词、打断和文字历史继续由本应用管理。Asterisk 负责运营商线路、电话信令、编码转换和电话媒体发送。
+本 provider 用 Asterisk 的 ARI 接听 SIP 来电，也保留主动外呼，并用原生 `chan_websocket` 双向传输音频。既有 ASR、LLM、TTS、提示词、打断和文字历史继续由本应用管理。Asterisk 负责运营商线路、电话信令、编码转换和电话媒体发送。
 
-默认 `enabled=false`。保存配置不会连接 PBX、注册线路或拨号；只有启用后明确开始一次外呼才建立连接。本 provider 仍受应用的单通会话限制。
+默认 `enabled=false`、`inbound_enabled=false`。入呼接听须同时打开总开关及来电接听开关，服务启动或保存生效配置后才建立监听连接；仅打开总开关保留原外呼行为，明确开始一次外呼时才连接。任何保存操作都不会主动拨号。本 provider 仍受应用的单通会话限制。
 
 ## 版本和前置条件
 
@@ -17,10 +17,15 @@
 
 | 字段 | 含义 |
 |---|---|
-| `enabled` | 默认关闭；准备好线路后显式启用 |
+| `enabled` | provider 总开关，默认关闭 |
+| `inbound_enabled` | 来电接听开关，默认关闭；与总开关同时启用才开始监听 |
+| `inbound_numbers` | 业务被叫号码白名单；留空接受专属路由上的全部来电 |
 | `ari_url` | PBX ARI 地址，以 `/ari` 结尾，例如 `https://<PBX 管理域名>/ari`；不能在 URL 中写账号、密码或查询参数 |
 | `username` / `password` | `ari.conf` 的可写 ARI 用户；密码只保存在服务端，页面回读只显示是否已设置 |
 | `app` | 本应用登记到 ARI 的 Stasis 应用名，默认 `llmautotel`；多个系统使用独立应用名 |
+| `incoming_app` | 来电监听的 Stasis 应用名，默认 `llmautotel-inbound`，须与外呼 `app` 不同 |
+| `inbound_marker` | Stasis 的唯一参数，默认 `llmautotel-inbound`；路由中必须填写一致的标识 |
+| `inbound_reconnect_seconds` | 监听连接断开后的重连间隔，默认 5 秒 |
 | `endpoint_template` | PBX 实际的 PJSIP 拨号模板，例如 `PJSIP/{number}@<中继名>`；仅允许一个 `{number}` 占位符 |
 | `caller_id` | 线路方认可的主叫号码，最终显示由 PBX 和运营商规则决定 |
 | `ring_timeout_seconds` | 等待被叫接听的最长振铃秒数；向 ARI 发送时向上取整为整数 |
@@ -50,6 +55,27 @@ password = <专用随机密码>
 
 需要加密传输时配置 Asterisk HTTPS 或已有管理网反向代理，然后填写 `https://.../ari`。本模式由应用主动连接 PBX 的媒体 WebSocket，不需要 `websocket_client.conf` 回连客户端条目，也不需要 PBX 访问本机网页应用的公网回调地址。[官方 ARI 配置说明](https://docs.asterisk.org/Configuration/Interfaces/Asterisk-REST-Interface-ARI/Asterisk-Configuration-for-ARI/)
 
+## 接听来电
+
+入呼只要求 ARI 地址、用户名、密码、独立入呼应用名和路由标识，**不要求外呼拨号模板或主叫号码**。客户 SIP 线路可来自运营商或云通信服务商：将对方提供的 SIP 中继接到现有 Asterisk，再把业务号码的来电路由给本应用。云厂商必须实际提供标准 SIP 中继及号码路由；只有云平台 HTTP API 的账户不能当作 SIP 账号填写。
+
+管理员将业务 DID 路由到下列 dialplan，替换示例中的业务号码、应用名和标识；不要将整个 PBX 的所有来电指向本应用。本应用不会自动编辑 PBX 配置。
+
+```ini
+[llmautotel-inbound-route]
+exten => <业务号码>,1,NoOp(Product assistant incoming call)
+ same => n,Stasis(<incoming_app>,<inbound_marker>)
+ same => n,Hangup()
+```
+
+由应用在成功取得全局单通槽后回答来电，因此路由中不要预先 `Answer()`。`inbound_numbers` 匹配 `StasisStart.channel.dialplan.exten`，应填写实际进入这个路由时的被叫号码。SIP 线路的号码转换规则、DID 路由和防火墙由 PBX 管理员配置。[官方 Stasis 接管及应答说明](https://docs.asterisk.org/Configuration/Interfaces/Asterisk-REST-Interface-ARI/Getting-Started-with-ARI/)、[Asterisk 22 通道接口](https://docs.asterisk.org/Asterisk_22_Documentation/API_Documentation/Asterisk_REST_Interface/Channels_REST_API/)
+
+监听器只接管指定 `incoming_app` 且参数恰为 `[inbound_marker]` 的 `StasisStart`。外呼使用独立应用，媒体通道没有来电参数，其他应用及标识的通话均不会被接听或挂断。专属路由中不在白名单内的来电，以及应用已有网页、外呼或来电会话时的新来电，会以 `reason=busy` 拒接，不占用会话槽或生成对话历史。
+
+接纳后对**原来的 channel ID**执行 `POST /channels/{id}/answer`，不调用 originate；复用与外呼相同的媒体 bridge、PCM、播放确认、打断和告别机制。长驻监听器独占入呼应用的事件 WebSocket，单通 driver 使用隔离队列接收原通道与本通媒体通道事件，不建立第二条同应用 WebSocket。即使在单通后台任务尚未启动时挂断，来电对象也可以直接清理原通道。
+
+监听连接失效会结束借用该连接的本应用来电；监听器按配置间隔重连，只等待新事件，不枚举并重接旧通道，同一 channel ID 不重复接听。关闭接听入口后，已有来电保留事件连接直到单通释放；重新配置连接参数应由会话协调器在本通结束后应用。应用停止不影响未路由给本服务的其他 PBX 电话。
+
 ## 拨号、打断和挂断
 
 1. 应用先登记 ARI 事件连接，再创建被叫 SIP 通道。振铃、忙线、拒接及未接听不会触发 AI 开场。
@@ -74,4 +100,6 @@ uv run pytest tests/test_telephony_asterisk.py -q
 
 可控 HTTP 替身核对实际请求 URL、Basic 鉴权头、拨号参数、externalMedia、变量读取及 bridge 操作，并通过独立远端任务验证挂断先到、三个创建操作迟到完成后仍被清理；清理 HTTP 失败、共用超时、WebSocket 关闭异常、本地客户端释放与幂等收尾亦有覆盖。可控 WebSocket 替身验证振铃与 Stasis 时序、音频分块、流控、打断、旧结果迟到、关闭与错误信息。另有真实本机 WebSocket server 验证 Upgrade、子协议、TEXT／BINARY 帧和标记确认；全部测试只使用测试凭据，不发真实电话。
 
-尚未验证实体 Asterisk、SIP 运营商／网关线路、真实号码呼叫、忙音与主叫显示、手机端音质、告别完整播放或 500 ms 内停音。甲方确定 PBX 和线路后，需在其测试线路上完成这些项目；不能把协议测试结果当作运营商联通验收。
+入呼测试验证接管原通道、共享 ARI 事件、实际 answer 与媒体参数、双向 PCM、标识隔离、忙线及白名单拒接、重复事件去重、监听断连重连、监听入口关闭保留已有通话，以及会话任务启动前的远端清理。
+
+尚未验证实体 Asterisk、SIP 运营商／网关线路、真实号码来电或外呼、忙音与主叫显示、手机端音质、告别完整播放或 500 ms 内停音。甲方确定 PBX 和线路后，需在其测试线路上完成这些项目；不能把协议测试结果当作运营商联通验收。

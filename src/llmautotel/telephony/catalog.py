@@ -20,6 +20,13 @@ PROVIDERS: dict[str, tuple[str, str, str]] = {
 }
 
 LABELS: dict[str, str] = {
+    "inbound_enabled": "启用来电接听",
+    "inbound_numbers": "接听号码白名单（留空接受专属路由上的来电）",
+    "incoming_app": "入呼 ARI 应用名（与外呼不同）",
+    "inbound_marker": "入呼专属路由标识",
+    "inbound_reconnect_seconds": "来电监听重连间隔（秒）",
+    "account_uid": "阿里云账号 UID",
+    "inbound_ai_agent_id": "入呼 AI 智能体 ID",
     "call_timeout_seconds": "回执缺失时的通话上限（秒）",
     "ari_url": "ARI 地址",
     "username": "ARI 用户名",
@@ -89,6 +96,7 @@ def provider_catalog(settings: TelephonySettings) -> list[dict[str, Any]]:
                 "mode": mode,
                 "description": description,
                 "enabled": provider.enabled,
+                "inbound_enabled": provider.inbound_enabled,
                 "fields": fields,
             }
         )

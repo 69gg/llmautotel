@@ -16,8 +16,9 @@ from pydantic import SecretStr, ValidationError
 from websockets.asyncio.server import ServerConnection, serve
 
 import llmautotel.telephony.asterisk as asterisk_module
-from llmautotel.telephony.asterisk import AsteriskDriver
+from llmautotel.telephony.asterisk import AsteriskDriver, AsteriskIncomingListener
 from llmautotel.telephony.base import MediaCallbacks, TelephonyError
+from llmautotel.telephony.incoming import IncomingCall, IncomingCallbacks
 from llmautotel.telephony.settings import AsteriskSettings
 
 
@@ -780,3 +781,177 @@ async def test_unconfirmed_creation_timeout_reports_remote_cleanup_uncertainty(
     assert len([item for item in pbx.requests if item.method == "DELETE"]) == 3
     assert not driver._creates
     await driver.close()
+
+
+def inbound_event(remote_id: str = "1728000000.12", **changes: Any) -> dict[str, Any]:
+    event: dict[str, Any] = {
+        "type": "StasisStart",
+        "application": "llmautotel-inbound",
+        "args": ["llmautotel-inbound"],
+        "channel": {
+            "id": remote_id,
+            "state": "Ring",
+            "caller": {"number": "13800138000"},
+            "dialplan": {"exten": "4001234567"},
+        },
+    }
+    event.update(changes)
+    return event
+
+
+async def test_inbound_answer_existing_channel_shared_events_and_pcm(pbx: FakePBX) -> None:
+    calls: list[IncomingCall] = []
+    errors: list[str] = []
+
+    async def accept(call: IncomingCall) -> bool:
+        calls.append(call)
+        return True
+
+    async def error(message: str) -> None:
+        errors.append(message)
+
+    configured = settings(inbound_enabled=True, endpoint_template="", caller_id="")
+    async with httpx.AsyncClient(transport=httpx.MockTransport(pbx.request)) as client:
+        listener = AsteriskIncomingListener(
+            configured, IncomingCallbacks(accept, error), client=client
+        )
+        await listener.start()
+        assert listener.connected
+        pbx.events.event(inbound_event())
+        await eventually(lambda: len(calls) == 1)
+        call = calls[0]
+        assert (call.caller, call.destination, call.remote_id) == (
+            "13800138000",
+            "4001234567",
+            "1728000000.12",
+        )
+        log = CallbackLog()
+        driver = AsteriskDriver(configured, log.callbacks(), incoming=call, client=client)
+        await driver.start("", "inbound-test")
+        await asyncio.wait_for(log.ready.wait(), 1)
+        assert len(pbx.connections) == 2  # 一条共享 ARI、一条单通媒体；没有抢应用的第二条 ARI。
+        assert parse_qs(urlsplit(pbx.connections[0][0]).query) == {"app": ["llmautotel-inbound"]}
+        assert not any(request.url.path.endswith("/ari/channels") for request in pbx.requests)
+        assert any(
+            request.url.path.endswith("/channels/1728000000.12/answer") for request in pbx.requests
+        )
+        external = next(
+            request for request in pbx.requests if request.url.path.endswith("externalMedia")
+        )
+        assert external.url.params["app"] == "llmautotel-inbound"
+        pbx.media.incoming.put_nowait(b"\x01\x00" * 320)
+        await eventually(lambda: len(log.audio) == 1)
+        await driver.send_audio(b"\x02\x00" * 320)
+        assert b"\x02\x00" * 320 in pbx.media.sent
+        # 停止接纳入口不关闭已借给单通的事件连接，不挂电话。
+        await listener.close()
+        assert not pbx.events.closed
+        assert not any(request.method == "DELETE" for request in pbx.requests)
+        await driver.close()
+        await eventually(lambda: pbx.events.closed)
+        assert errors == []
+
+
+async def test_inbound_scoping_busy_dedup_and_prestart_close(pbx: FakePBX) -> None:
+    calls: list[IncomingCall] = []
+    errors: list[str] = []
+
+    async def accept(call: IncomingCall) -> bool:
+        calls.append(call)
+        return len(calls) == 1
+
+    async def error(message: str) -> None:
+        errors.append(message)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(pbx.request)) as client:
+        listener = AsteriskIncomingListener(
+            settings(inbound_enabled=True, inbound_numbers=["4001234567"]),
+            IncomingCallbacks(accept, error),
+            client=client,
+        )
+        await listener.start()
+        pbx.events.event(inbound_event("foreign-app", application="unrelated"))
+        pbx.events.event(inbound_event("foreign-marker", args=["someone-else"]))
+        pbx.events.event(inbound_event("no-marker", args=[]))
+        pbx.events.event(inbound_event())
+        pbx.events.event(inbound_event())
+        pbx.events.event(inbound_event("busy.1"))
+        pbx.events.event(
+            inbound_event(
+                "wrong-number", channel={"id": "wrong-number", "dialplan": {"exten": "4009999999"}}
+            )
+        )
+        await eventually(lambda: len(calls) == 2 and len(pbx.requests) == 2)
+        assert [call.remote_id for call in calls] == ["1728000000.12", "busy.1"]
+        assert all(
+            request.method == "DELETE" and request.url.params["reason"] == "busy"
+            for request in pbx.requests
+        )
+        assert not any("foreign" in request.url.path for request in pbx.requests)
+        await calls[0].close()  # session task 尚未启动，仍立即清理原通道。
+        await calls[0].close()
+        assert len(pbx.requests) == 3
+        assert pbx.requests[-1].url.params["reason"] == "normal"
+        await listener.close()
+        assert errors == []
+
+
+async def test_inbound_disabled_does_not_connect_or_require_outbound_fields(pbx: FakePBX) -> None:
+    async def accept(call: IncomingCall) -> bool:
+        raise AssertionError("must not admit")
+
+    async def error(message: str) -> None:
+        return
+
+    listener = AsteriskIncomingListener(
+        settings(inbound_enabled=False), IncomingCallbacks(accept, error)
+    )
+    with pytest.raises(TelephonyError, match="尚未启用"):
+        await listener.start()
+    await listener.close()
+    assert pbx.connections == []
+    configured = settings(inbound_enabled=True, endpoint_template="", caller_id="")
+    assert configured.missing_inbound_fields() == []
+    with pytest.raises(ValidationError, match="不同 ARI 应用"):
+        settings(inbound_enabled=True, incoming_app="configured-app")
+
+
+async def test_inbound_disconnect_reconnect_does_not_readmit_existing_id(
+    pbx: FakePBX,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[IncomingCall] = []
+    errors: list[str] = []
+    sockets = [FakeSocket(), FakeSocket()]
+
+    async def connect(uri: str, **kwargs: Any) -> FakeSocket:
+        return sockets.pop(0)
+
+    async def accept(call: IncomingCall) -> bool:
+        calls.append(call)
+        return True
+
+    async def error(message: str) -> None:
+        errors.append(message)
+
+    first, second = sockets
+    monkeypatch.setattr(asterisk_module, "connect", connect)
+    configured = settings(inbound_enabled=True)
+    configured.inbound_reconnect_seconds = 0.01
+    async with httpx.AsyncClient(transport=httpx.MockTransport(pbx.request)) as client:
+        listener = AsteriskIncomingListener(
+            configured, IncomingCallbacks(accept, error), client=client
+        )
+        await listener.start()
+        first.event(inbound_event())
+        await eventually(lambda: len(calls) == 1)
+        first.incoming.put_nowait(None)
+        await eventually(lambda: listener.connected and not sockets)
+        second.event(inbound_event())
+        second.event(inbound_event("new.1"))
+        await eventually(lambda: len(calls) == 2)
+        assert [call.remote_id for call in calls] == ["1728000000.12", "new.1"]
+        assert errors and "test-secret" not in errors[0]
+        await calls[0].close()
+        await calls[1].close()
+        await listener.close()

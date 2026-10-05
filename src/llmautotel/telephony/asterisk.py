@@ -1,4 +1,4 @@
-"""Asterisk 22.8+ ARI 外呼与原生 chan_websocket 双向媒体。"""
+"""Asterisk 22.8+ ARI 呼叫控制与原生 chan_websocket 双向媒体。"""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import json
 import math
 import re
 from collections.abc import Coroutine
+from contextlib import suppress
 from typing import Any
 from urllib.parse import quote, urlencode, urlsplit, urlunsplit
 
@@ -15,6 +16,7 @@ import httpx
 from websockets.asyncio.client import ClientConnection, connect
 
 from llmautotel.telephony.base import MediaCallbacks, TelephonyError
+from llmautotel.telephony.incoming import IncomingCall, IncomingCallbacks, IncomingEvents
 from llmautotel.telephony.settings import AsteriskSettings
 
 _CREATE_PATHS = {"/channels", "/bridges", "/channels/externalMedia"}
@@ -31,9 +33,11 @@ class AsteriskDriver:
         callbacks: MediaCallbacks,
         *,
         client: httpx.AsyncClient | None = None,
+        incoming: IncomingCall | None = None,
     ) -> None:
         self._settings = settings.model_copy(deep=True)
         self._callbacks = callbacks
+        self._incoming = incoming
         self._client = client
         self._owns_client = client is None
         self._events: ClientConnection | None = None
@@ -67,6 +71,18 @@ class AsteriskDriver:
         settings = self._settings
         if not settings.enabled:
             raise TelephonyError("Asterisk provider 尚未启用。")
+        if self._incoming is not None:
+            if not settings.inbound_enabled or settings.missing_inbound_fields():
+                raise TelephonyError("Asterisk 入呼未启用或 ARI 配置不完整。")
+            if self._incoming.provider != "asterisk" or self._incoming.events is None:
+                raise TelephonyError("Asterisk 来电事件订阅无效。")
+            if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,200}", self._incoming.remote_id):
+                raise TelephonyError("Asterisk 来电通道 ID 无效。")
+            if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", call_id):
+                raise TelephonyError("通话 ID 格式无效。")
+            if not urlsplit(settings.ari_url).path.rstrip("/").endswith("/ari"):
+                raise TelephonyError("ARI 地址须以 /ari 结尾。")
+            return
         if not all(
             (settings.ari_url, settings.username, settings.password, settings.endpoint_template)
         ):
@@ -180,13 +196,23 @@ class AsteriskDriver:
         if self._started or self._closed:
             raise TelephonyError("Asterisk driver 不能重复启动。")
         self._started = True
-        self._channel_id = f"{call_id}-pstn"
+        self._channel_id = self._incoming.remote_id if self._incoming else f"{call_id}-pstn"
         self._external_id = f"{call_id}-media"
         self._bridge_id = f"{call_id}-bridge"
         if self._client is None:
             self._client = httpx.AsyncClient(trust_env=False)
         self._start_task = asyncio.current_task()
         try:
+            if self._incoming is not None:
+                assert self._incoming.events is not None
+                self._incoming.events.add_channel(self._external_id)
+                self._spawn(self._read_events())
+                await self._request("POST", f"/channels/{self._channel_id}/answer")
+                self._answered = True
+                self._media_preparing = True
+                self._spawn(self._prepare_media())
+                self._spawn(self._watch_answer())
+                return
             event_url = (
                 self._websocket_url("/events") + "?" + urlencode({"app": self._settings.app})
             )
@@ -226,12 +252,13 @@ class AsteriskDriver:
                 await self._finish("no_answer" if not self._answered else "media_error")
 
     async def _read_events(self) -> None:
-        assert self._events is not None
+        events = self._incoming.events if self._incoming else self._events
+        assert events is not None
         try:
-            async for raw in self._events:
+            async for raw in events:
                 if self._closed:
                     return
-                event = json.loads(raw)
+                event = raw if isinstance(raw, dict) else json.loads(raw)
                 channel = event.get("channel", {})
                 channel_id = channel.get("id")
                 if channel_id == self._channel_id:
@@ -239,7 +266,11 @@ class AsteriskDriver:
                         if channel.get("state") == "Up":
                             self._answered = True
                             # Up 状态事件可能先于 StasisStart；桥接要求通道已进入应用。
-                            if event.get("type") == "StasisStart" and not self._media_preparing:
+                            if (
+                                self._incoming is None
+                                and event.get("type") == "StasisStart"
+                                and not self._media_preparing
+                            ):
                                 self._media_preparing = True
                                 self._spawn(self._prepare_media())
                     elif event.get("type") in {"ChannelDestroyed", "StasisEnd"}:
@@ -276,7 +307,9 @@ class AsteriskDriver:
                     "/channels/externalMedia",
                     params={
                         "channelId": self._external_id,
-                        "app": self._settings.app,
+                        "app": self._settings.incoming_app
+                        if self._incoming
+                        else self._settings.app,
                         "external_host": "INCOMING",
                         "transport": "websocket",
                         "encapsulation": "none",
@@ -523,6 +556,14 @@ class AsteriskDriver:
             except TimeoutError:
                 failed = True
         finally:
+            if self._incoming is not None:
+                if not self._started:
+                    try:
+                        await self._incoming.close()
+                    except Exception:
+                        failed = True
+                else:
+                    self._incoming.release()
             if self._owns_client and self._client is not None:
                 try:
                     await self._client.aclose()
@@ -530,3 +571,198 @@ class AsteriskDriver:
                     failed = True
         if failed:
             raise TelephonyError("Asterisk 远端资源清理失败或超时，请确认 PBX 电话状态。")
+
+
+class AsteriskIncomingListener:
+    """独占入呼 ARI 应用事件连接，仅接管带专属 Stasis 参数的通道。"""
+
+    def __init__(
+        self,
+        settings: AsteriskSettings,
+        callbacks: IncomingCallbacks,
+        *,
+        client: httpx.AsyncClient | None = None,
+    ) -> None:
+        self.settings = settings.model_copy(deep=True)
+        self.callbacks = callbacks
+        self.connected = False
+        self.last_error: str | None = None
+        # 复用 ARI 请求、头鉴权和 WS URL，实现不启动其拨号逻辑。
+        self._control = AsteriskDriver(
+            self.settings,
+            MediaCallbacks(self._noop, self._audio_noop, self._reason_noop, callbacks.on_error),
+            client=client,
+        )
+        self._socket: ClientConnection | None = None
+        self._worker: asyncio.Task[None] | None = None
+        self._admissions: set[asyncio.Task[None]] = set()
+        self._subscriptions: set[IncomingEvents] = set()
+        self._seen: set[str] = set()
+        self._closing = False
+        self._closed = False
+
+    @staticmethod
+    async def _noop() -> None:
+        return
+
+    @staticmethod
+    async def _audio_noop(audio: bytes, rate: int) -> None:
+        return
+
+    @staticmethod
+    async def _reason_noop(reason: str) -> None:
+        return
+
+    async def _connect(self) -> None:
+        event_url = (
+            self._control._websocket_url("/events")
+            + "?"
+            + urlencode({"app": self.settings.incoming_app})
+        )
+        self._socket = await self._control._connect(event_url, "ari")
+        self.connected = True
+        self.last_error = None
+
+    async def start(self) -> None:
+        if self._worker is not None or self._closing:
+            raise TelephonyError("Asterisk 来电监听器不能重复启动。")
+        if not self.settings.enabled or not self.settings.inbound_enabled:
+            raise TelephonyError("Asterisk 来电接听尚未启用。")
+        if self.settings.missing_inbound_fields():
+            raise TelephonyError("Asterisk 入呼 ARI 配置不完整。")
+        if not urlsplit(self.settings.ari_url).path.rstrip("/").endswith("/ari"):
+            raise TelephonyError("ARI 地址须以 /ari 结尾。")
+        if self._control._client is None:
+            self._control._client = httpx.AsyncClient(trust_env=False)
+        try:
+            await self._connect()
+        except Exception:
+            self.last_error = "Asterisk 入呼 ARI 事件连接失败。"
+            await self._control.close()
+            raise TelephonyError(self.last_error) from None
+        self._worker = asyncio.create_task(self._run())
+
+    def _release(self, subscription: IncomingEvents) -> None:
+        self._subscriptions.discard(subscription)
+        if self._closing and not self._subscriptions:
+            asyncio.create_task(self._stop())
+
+    async def _hangup(self, channel_id: str, reason: str) -> None:
+        await self._control._request(
+            "DELETE",
+            "/channels/" + quote(channel_id, safe=""),
+            params={"reason": "busy" if reason == "busy" else "normal"},
+            missing_ok=True,
+        )
+
+    async def _admit(self, call: IncomingCall) -> None:
+        try:
+            accepted = False if self._closing else await self.callbacks.on_call(call)
+            if not accepted:
+                await call.reject()
+        except asyncio.CancelledError:
+            await call.close()
+            raise
+        except Exception:
+            with suppress(Exception):
+                await call.close()
+            await self.callbacks.on_error("Asterisk 来电接管或拒接失败。")
+
+    def _event(self, event: dict[str, Any]) -> None:
+        channel = event.get("channel", {})
+        if not isinstance(channel, dict):
+            return
+        channel_id = channel.get("id", "")
+        for subscription in tuple(self._subscriptions):
+            if channel_id in subscription.channels:
+                subscription.put(event)
+        if (
+            event.get("type") != "StasisStart"
+            or event.get("application") != self.settings.incoming_app
+            or event.get("args", []) != [self.settings.inbound_marker]
+            or not isinstance(channel_id, str)
+            or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,200}", channel_id)
+            or channel_id in self._seen
+        ):
+            return
+        destination = str(channel.get("dialplan", {}).get("exten", ""))
+        self._seen.add(channel_id)
+        events = IncomingEvents(channel_id, self._release)
+        self._subscriptions.add(events)
+        events.put(event)
+
+        async def hangup(reason: str) -> None:
+            await self._hangup(channel_id, reason)
+
+        call = IncomingCall(
+            "asterisk",
+            channel_id,
+            str(channel.get("caller", {}).get("number", "")),
+            destination,
+            events=events,
+            hangup=hangup,
+        )
+        allowed = not self.settings.inbound_numbers or destination in self.settings.inbound_numbers
+        task = asyncio.create_task(self._admit_allowed(call, allowed))
+        self._admissions.add(task)
+        task.add_done_callback(self._admissions.discard)
+
+    async def _admit_allowed(self, call: IncomingCall, allowed: bool) -> None:
+        if allowed:
+            await self._admit(call)
+        else:
+            try:
+                await call.reject()
+            except Exception:
+                await self.callbacks.on_error("Asterisk 来电拒接失败。")
+
+    async def _run(self) -> None:
+        try:
+            while not self._closed:
+                try:
+                    assert self._socket is not None
+                    async for raw in self._socket:
+                        self._event(json.loads(raw))
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    pass
+                self.connected = False
+                if self._socket is not None:
+                    with suppress(Exception):
+                        await self._socket.close()
+                for subscription in tuple(self._subscriptions):
+                    subscription.disconnect()
+                if self._closing:
+                    return
+                self.last_error = "Asterisk 来电监听连接中断，正在重连。"
+                with suppress(Exception):
+                    await self.callbacks.on_error(self.last_error)
+                while not self._closing:
+                    await asyncio.sleep(self.settings.inbound_reconnect_seconds)
+                    try:
+                        await self._connect()
+                        break
+                    except Exception:
+                        self.last_error = "Asterisk 来电监听重连失败。"
+        finally:
+            self.connected = False
+
+    async def _stop(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        self.connected = False
+        if self._worker is not None and self._worker is not asyncio.current_task():
+            self._worker.cancel()
+            await asyncio.gather(self._worker, return_exceptions=True)
+        if self._socket is not None:
+            await self._socket.close()
+        await self._control.close()
+
+    async def close(self) -> None:
+        self._closing = True
+        await asyncio.gather(*tuple(self._admissions), return_exceptions=True)
+        # 入呼驱动借用本连接；关闭接听入口后，已有单通完成时才关 WS。
+        if not self._subscriptions:
+            await self._stop()

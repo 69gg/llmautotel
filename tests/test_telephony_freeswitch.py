@@ -546,3 +546,280 @@ async def test_timed_out_command_closes_esl_instead_of_reusing_late_reply(
             await connection.command("api uuid_getvar test read_rate")
     finally:
         await connection.close()
+
+
+class IncomingFreeSwitch(FakeFreeSwitch):
+    """多条真实 ESL TCP 连接：监听器与单通驱动分别认证及收事件。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.writers: set[asyncio.StreamWriter] = set()
+        self.subscribed: set[asyncio.StreamWriter] = set()
+
+    async def send(
+        self, writer: asyncio.StreamWriter, headers: dict[str, str], body: bytes = b""
+    ) -> None:
+        if body:
+            headers = {**headers, "Content-Length": str(len(body))}
+        wire = "".join(f"{key}: {value}\n" for key, value in headers.items()).encode()
+        writer.write(wire + b"\n" + body)
+        await writer.drain()
+
+    async def broadcast(self, headers: dict[str, str]) -> None:
+        body = "".join(f"{key}: {value}\n" for key, value in headers.items()).encode()
+        for writer in tuple(self.subscribed):
+            if not writer.is_closing():
+                await self.send(writer, {"Content-Type": "text/event-plain"}, body)
+
+    async def incoming(
+        self,
+        remote_id: str,
+        *,
+        marker: str = "llmautotel-inbound",
+        direction: str = "inbound",
+        destination: str = "4001234567",
+    ) -> None:
+        self.active_calls.add(remote_id)
+        await self.broadcast(
+            {
+                "Event-Name": "CHANNEL_PARK",
+                "Unique-ID": remote_id,
+                "Call-Direction": direction,
+                "variable_llmautotel_inbound": marker,
+                "Caller-Caller-ID-Number": "13800138000",
+                "Caller-Destination-Number": destination,
+            }
+        )
+
+    async def handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        task = asyncio.current_task()
+        assert task is not None
+        self.tasks.add(task)
+        self.writers.add(writer)
+        try:
+            await self.send(writer, {"Content-Type": "auth/request"})
+            while True:
+                try:
+                    command = (await reader.readuntil(b"\n\n")).decode().strip()
+                except asyncio.IncompleteReadError:
+                    return
+                self.commands.append(command)
+                if command.startswith("auth "):
+                    assert command == f"auth {self.password}"
+                    await self.send(writer, {"Content-Type": "command/reply", "Reply-Text": "+OK"})
+                elif command.startswith("event plain"):
+                    self.subscribed.add(writer)
+                    await self.send(writer, {"Content-Type": "command/reply", "Reply-Text": "+OK"})
+                elif command.startswith("api uuid_answer"):
+                    remote_id = command.split()[2]
+                    await self.send(writer, {"Content-Type": "api/response"}, b"+OK\n")
+                    await self.broadcast({"Event-Name": "CHANNEL_ANSWER", "Unique-ID": remote_id})
+                elif command.startswith("api uuid_getvar"):
+                    await self.send(writer, {"Content-Type": "api/response"}, self.rate)
+                elif command.startswith("sendmsg "):
+                    fields = dict(line.split(": ", 1) for line in command.splitlines()[1:])
+                    assert fields["call-command"] == "unicast"
+                    assert fields["transport"] == "udp"
+                    self.peer = fields["remote-ip"], int(fields["remote-port"])
+                    await self.send(writer, {"Content-Type": "command/reply", "Reply-Text": "+OK"})
+                    if self.send_media:
+                        await self.media_frames()
+                elif command.startswith("api uuid_kill"):
+                    remote_id = command.split()[2]
+                    self.active_calls.discard(remote_id)
+                    await self.send(writer, {"Content-Type": "api/response"}, b"+OK\n")
+                    await self.broadcast(
+                        {
+                            "Event-Name": "CHANNEL_HANGUP_COMPLETE",
+                            "Unique-ID": remote_id,
+                            "Hangup-Cause": "NORMAL_CLEARING",
+                        }
+                    )
+                else:
+                    raise AssertionError(f"unexpected incoming command: {command}")
+        finally:
+            self.writers.discard(writer)
+            self.subscribed.discard(writer)
+            writer.close()
+            with suppress(Exception):
+                await writer.wait_closed()
+            self.tasks.discard(task)
+
+    async def close(self) -> None:
+        for writer in tuple(self.writers):
+            writer.close()
+        await super().close()
+
+
+async def incoming_eventually(predicate: Any) -> None:
+    async with asyncio.timeout(2):
+        while not predicate():
+            await asyncio.sleep(0)
+
+
+async def test_inbound_esl_answer_existing_uuid_and_udp_media() -> None:
+    from llmautotel.telephony.freeswitch import FreeSwitchIncomingListener
+    from llmautotel.telephony.incoming import IncomingCall, IncomingCallbacks
+
+    fake = IncomingFreeSwitch()
+    calls: list[IncomingCall] = []
+    errors: list[str] = []
+
+    async def accept(call: IncomingCall) -> bool:
+        calls.append(call)
+        return True
+
+    async def error(message: str) -> None:
+        errors.append(message)
+
+    await fake.open()
+    config = fake.settings(inbound_enabled=True, gateway="", caller_id="")
+    listener = FreeSwitchIncomingListener(config, IncomingCallbacks(accept, error))
+    driver: FreeSwitchDriver | None = None
+    try:
+        await listener.start()
+        remote_id = str(uuid4())
+        await fake.incoming(remote_id)
+        await incoming_eventually(lambda: len(calls) == 1)
+        assert (calls[0].caller, calls[0].destination) == ("13800138000", "4001234567")
+        log = CallbackLog()
+        driver = FreeSwitchDriver(config, log.callbacks(), incoming=calls[0])
+        await driver.start("", str(uuid4()))
+        await asyncio.wait_for(log.received.wait(), 2)
+        assert f"api uuid_answer {remote_id}" in fake.commands
+        assert not any("originate" in command for command in fake.commands)
+        assert len([command for command in fake.commands if command.startswith("sendmsg")]) == 1
+        assert log.audio[0] == (PCM, 8000)
+        await driver.send_audio(PCM)
+        assert await asyncio.wait_for(fake.media.received.get(), 1) == PCM
+        await listener.close()
+        assert not any("uuid_kill" in command for command in fake.commands)
+        assert remote_id in fake.active_calls  # 关监听器不挂已接纳电话。
+        await driver.close()
+        assert remote_id not in fake.active_calls
+        assert errors == []
+    finally:
+        if driver is not None:
+            await driver.close()
+        await listener.close()
+        await fake.close()
+
+
+async def test_inbound_esl_scopes_busy_duplicates_and_early_close() -> None:
+    from llmautotel.telephony.freeswitch import FreeSwitchIncomingListener
+    from llmautotel.telephony.incoming import IncomingCall, IncomingCallbacks
+
+    fake = IncomingFreeSwitch()
+    calls: list[IncomingCall] = []
+    errors: list[str] = []
+
+    async def accept(call: IncomingCall) -> bool:
+        calls.append(call)
+        return len(calls) == 1
+
+    async def error(message: str) -> None:
+        errors.append(message)
+
+    await fake.open()
+    listener = FreeSwitchIncomingListener(
+        fake.settings(inbound_enabled=True, inbound_numbers=["4001234567"]),
+        IncomingCallbacks(accept, error),
+    )
+    try:
+        await listener.start()
+        foreign = str(uuid4())
+        outgoing = str(uuid4())
+        accepted = str(uuid4())
+        busy = str(uuid4())
+        wrong_number = str(uuid4())
+        await fake.incoming(foreign, marker="foreign")
+        await fake.incoming(outgoing, direction="outbound")
+        await fake.incoming(accepted)
+        await fake.incoming(accepted)
+        await fake.incoming(busy)
+        await fake.incoming(wrong_number, destination="4009999999")
+        await incoming_eventually(
+            lambda: (
+                len(calls) == 2
+                and busy not in fake.active_calls
+                and wrong_number not in fake.active_calls
+            )
+        )
+        assert [call.remote_id for call in calls] == [accepted, busy]
+        assert f"api uuid_kill {busy} USER_BUSY" in fake.commands
+        assert {foreign, outgoing, accepted}.issubset(fake.active_calls)
+        await calls[0].close()
+        await calls[0].close()
+        assert fake.commands.count(f"api uuid_kill {accepted} NORMAL_CLEARING") == 1
+        await listener.close()
+        assert {foreign, outgoing}.issubset(fake.active_calls)
+        assert errors == []
+    finally:
+        await listener.close()
+        await fake.close()
+
+
+async def test_inbound_esl_disabled_never_connects(freeswitch: FakeFreeSwitch) -> None:
+    from llmautotel.telephony.freeswitch import FreeSwitchIncomingListener
+    from llmautotel.telephony.incoming import IncomingCall, IncomingCallbacks
+
+    async def accept(call: IncomingCall) -> bool:
+        raise AssertionError("must not admit")
+
+    async def error(message: str) -> None:
+        return
+
+    listener = FreeSwitchIncomingListener(
+        freeswitch.settings(inbound_enabled=False), IncomingCallbacks(accept, error)
+    )
+    with pytest.raises(TelephonyError, match="尚未启用"):
+        await listener.start()
+    await listener.close()
+    assert freeswitch.commands == []
+    assert (
+        freeswitch.settings(inbound_enabled=True, gateway="", caller_id="").missing_inbound_fields()
+        == []
+    )
+
+
+async def test_inbound_esl_reconnect_does_not_reclaim_old_uuid() -> None:
+    from llmautotel.telephony.freeswitch import FreeSwitchIncomingListener
+    from llmautotel.telephony.incoming import IncomingCall, IncomingCallbacks
+
+    fake = IncomingFreeSwitch()
+    calls: list[IncomingCall] = []
+    errors: list[str] = []
+
+    async def accept(call: IncomingCall) -> bool:
+        calls.append(call)
+        return True
+
+    async def error(message: str) -> None:
+        errors.append(message)
+
+    await fake.open()
+    config = fake.settings(inbound_enabled=True)
+    config.inbound_reconnect_seconds = 0.01
+    listener = FreeSwitchIncomingListener(config, IncomingCallbacks(accept, error))
+    try:
+        await listener.start()
+        first = str(uuid4())
+        await fake.incoming(first)
+        await incoming_eventually(lambda: len(calls) == 1)
+        old_connection = listener._esl
+        assert old_connection is not None
+        next(iter(fake.writers)).close()
+        await incoming_eventually(
+            lambda: listener.connected and listener._esl is not old_connection
+        )
+        await fake.incoming(first)
+        second = str(uuid4())
+        await fake.incoming(second)
+        await incoming_eventually(lambda: len(calls) == 2)
+        assert [call.remote_id for call in calls] == [first, second]
+        assert errors and fake.password not in errors[0]
+        await calls[0].close()
+        await calls[1].close()
+    finally:
+        await listener.close()
+        await fake.close()
