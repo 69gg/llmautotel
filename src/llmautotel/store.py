@@ -40,13 +40,25 @@ class Store:
         def read() -> AppSettings:
             with self._connect() as connection:
                 row = connection.execute("SELECT body FROM settings WHERE id = 1").fetchone()
-            return AppSettings.model_validate_json(row[0]) if row else AppSettings()
+            if row is None:
+                return AppSettings()
+            body: dict[str, Any] = json.loads(row[0])
+            if "conversation" not in body:
+                # 旧销售资料仍完整保留；升级后的新会话切到咨询，避免继承推销话术。
+                body["conversation"] = {"mode": "consultation"}
+                body.setdefault(
+                    "consultation", {"product_info": body.get("sales", {}).get("product_info", "")}
+                )
+            return AppSettings.model_validate(body)
 
         return await asyncio.to_thread(read)
 
     async def save_settings(self, settings: AppSettings) -> AppSettings:
         # Calls are serialized by the API lock, so omitted credentials cannot race.
         current = await self.get_settings()
+        for section in ("conversation", "consultation", "sales"):
+            if section not in settings.model_fields_set:
+                setattr(settings, section, getattr(current, section).model_copy(deep=True))
         if "telephony" not in settings.model_fields_set:
             settings.telephony = current.telephony.model_copy(deep=True)
         else:
@@ -96,7 +108,14 @@ class Store:
             return [
                 record.model_dump(mode="json", exclude={"transcript", "settings"})
                 | {
-                    "goal": record.settings["sales"]["goal"],
+                    "goal": (
+                        "产品咨询"
+                        if record.settings.get("conversation", {}).get("mode") == "consultation"
+                        else record.settings.get("sales", {}).get("goal", "")
+                    ),
+                    "conversation_mode": record.settings.get("conversation", {}).get(
+                        "mode", "sales"
+                    ),
                     "message_count": len(record.transcript),
                 }
                 for record in records

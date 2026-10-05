@@ -13,6 +13,7 @@ from fastapi import HTTPException
 
 from llmautotel.models import AppSettings, CallRecord, TranscriptEntry
 from llmautotel.store import Store
+from llmautotel.telephony.incoming import IncomingCall
 from llmautotel.telephony.settings import TelephonyProviderName
 
 if TYPE_CHECKING:
@@ -37,6 +38,18 @@ VoiceFactory = Callable[["SmallWebRTCConnection", AppSettings, "VoiceCallbacks"]
 PhoneFactory = Callable[
     [TelephonyProviderName, str, str, AppSettings, "VoiceCallbacks"], VoiceRuntime
 ]
+IncomingFactory = Callable[[IncomingCall, str, AppSettings, "VoiceCallbacks"], VoiceRuntime]
+
+
+def default_incoming_factory(
+    incoming: IncomingCall,
+    call_id: str,
+    settings: AppSettings,
+    callbacks: VoiceCallbacks,
+) -> VoiceRuntime:
+    from llmautotel.telephony.factory import create_incoming_session
+
+    return create_incoming_session(incoming, call_id, settings, callbacks)
 
 
 def default_phone_factory(
@@ -81,6 +94,7 @@ class ActiveCall:
     closing: bool = False
     requested_reason: str | None = None
     error: str | None = None
+    incoming: IncomingCall | None = None
 
 
 class SessionManager:
@@ -91,6 +105,7 @@ class SessionManager:
         connection_timeout_seconds: float = 30,
         voice_factory: VoiceFactory = default_voice_factory,
         phone_factory: PhoneFactory = default_phone_factory,
+        incoming_factory: IncomingFactory = default_incoming_factory,
         handler_factory: Callable[[], SmallWebRTCRequestHandler] = default_handler_factory,
     ) -> None:
         self.store = store
@@ -98,6 +113,7 @@ class SessionManager:
         self._lock = asyncio.Lock()
         self._voice_factory = voice_factory
         self._phone_factory = phone_factory
+        self._incoming_factory = incoming_factory
         self._handler_factory = handler_factory
         self._connection_timeout = connection_timeout_seconds
 
@@ -140,6 +156,7 @@ class SessionManager:
                 started_at=now(),
                 settings=settings.public(),
                 channel="telephone",
+                direction="outbound",
                 provider=provider,
                 destination=number,
                 state="dialing",
@@ -149,6 +166,56 @@ class SessionManager:
             self._active = active
             active.task = asyncio.create_task(self._run_voice(active))
             return {"call": record.model_dump(mode="json")}
+
+    async def accept_incoming(
+        self,
+        incoming: IncomingCall,
+        *,
+        listener_settings: AppSettings | None = None,
+    ) -> CallRecord:
+        """远端重试幂等；与网页、外呼竞争同一槽位后才开始接听。"""
+        from llmautotel.telephony.factory import missing_phone_fields
+
+        async with self._lock:
+            settings = await self.store.get_settings()
+            config = getattr(settings.telephony, incoming.provider)
+            if not config.enabled or not config.inbound_enabled:
+                raise HTTPException(403, "所选电话 provider 未启用来电接听")
+            if listener_settings is not None and config != getattr(
+                listener_settings.telephony, incoming.provider
+            ):
+                raise HTTPException(409, "线路配置正在更新，请稍后重试")
+            existing = await self.store.get_phone_call(incoming.provider, None, incoming.remote_id)
+            if existing is not None:
+                if (
+                    existing.direction != "inbound"
+                    or existing.caller != incoming.caller
+                    or existing.destination != incoming.destination
+                ):
+                    raise HTTPException(409, "来电会话标识不匹配")
+                return existing
+            if self._active is not None:
+                raise HTTPException(409, "已有一通对话进行中，请先挂断")
+            missing = missing_phone_fields(settings, incoming.provider, direction="inbound")
+            if missing:
+                raise HTTPException(422, "请先配置：" + "、".join(missing))
+            record = CallRecord(
+                id=str(uuid4()),
+                started_at=now(),
+                settings=settings.public(),
+                channel="telephone",
+                direction="inbound",
+                provider=incoming.provider,
+                caller=incoming.caller,
+                destination=incoming.destination,
+                remote_id=incoming.remote_id,
+                state="connecting",
+            )
+            active = ActiveCall(record, settings.model_copy(deep=True), incoming=incoming)
+            await self.store.save_call(record)
+            self._active = active
+            active.task = asyncio.create_task(self._run_voice(active))
+            return record.model_copy(deep=True)
 
     async def phone_runtime(self, provider: str, *, allow_closing: bool = False) -> VoiceRuntime:
         """只暴露当前电话运行时；其网关自行认证并核对本通标识。"""
@@ -296,7 +363,11 @@ class SessionManager:
                 if self._active is not active or active.closing:
                     return
             callbacks = VoiceCallbacks(on_state, on_message, on_error)
-            if active.record.channel == "telephone":
+            if active.incoming is not None:
+                active.voice = self._incoming_factory(
+                    active.incoming, active.record.id, active.settings, callbacks
+                )
+            elif active.record.channel == "telephone":
                 assert active.record.provider is not None and active.record.destination is not None
                 active.voice = self._phone_factory(
                     active.record.provider,
@@ -315,7 +386,18 @@ class SessionManager:
             active.error = active.error or "语音会话异常，请重新开始"
             reason = "internal_error"
         finally:
-            await self._finish(active, active.requested_reason or reason)
+            try:
+                if active.incoming is not None:
+                    try:
+                        if active.voice is None:
+                            await active.incoming.close()
+                        else:
+                            active.incoming.release()
+                    except Exception:
+                        active.error = active.error or "来电资源清理失败，请确认远端状态"
+            finally:
+                # 远端清理完成后重抛取消，也必须持久化结束并释放单会话槽。
+                await self._finish(active, active.requested_reason or reason)
 
     async def _finish(self, active: ActiveCall, reason: str) -> None:
         async with self._lock:
@@ -363,8 +445,17 @@ class SessionManager:
                     await asyncio.gather(active.task, return_exceptions=True)
         elif active.task:
             # 挂断可能发生在 SDP 返回后、语音任务首次运行之前。
-            active.task.cancel()
-            await asyncio.gather(active.task, return_exceptions=True)
+            try:
+                active.task.cancel()
+                await asyncio.gather(active.task, return_exceptions=True)
+            finally:
+                if active.incoming is not None and active.voice is None:
+                    try:
+                        await active.incoming.close()
+                    except Exception:
+                        active.error = active.error or "来电资源清理失败，请确认远端状态"
+                    finally:
+                        await self._finish(active, reason)
         if active.handler is not None:
             try:
                 await active.handler.close()

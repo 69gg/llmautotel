@@ -21,7 +21,7 @@ PROVIDERS: dict[str, tuple[str, str, str]] = {
 
 LABELS: dict[str, str] = {
     "inbound_enabled": "启用来电接听",
-    "inbound_numbers": "接听号码白名单（留空接受专属路由上的来电）",
+    "inbound_numbers": "接听号码白名单",
     "incoming_app": "入呼 ARI 应用名（与外呼不同）",
     "inbound_marker": "入呼专属路由标识",
     "inbound_reconnect_seconds": "来电监听重连间隔（秒）",

@@ -19,6 +19,7 @@ from llmautotel.models import AppSettings, CallRecord
 from llmautotel.sessions import SessionManager
 from llmautotel.store import Store
 from llmautotel.telephony.catalog import provider_catalog
+from llmautotel.telephony.service import IncomingService
 from llmautotel.telephony.settings import TelephonyProviderName
 
 
@@ -33,10 +34,14 @@ def create_app(runtime: RuntimeConfig | None = None) -> FastAPI:
         app.state.sessions = SessionManager(
             app.state.store, connection_timeout_seconds=config.connection_timeout_seconds
         )
+        app.state.incoming = IncomingService(app.state.store, app.state.sessions)
+        app.state.incoming.start()
         try:
             yield
         finally:
+            app.state.incoming.pause()
             await app.state.sessions.close()
+            await app.state.incoming.close()
 
     app = FastAPI(title="LLMAutoTel", lifespan=lifespan)
 
@@ -68,6 +73,71 @@ def create_app(runtime: RuntimeConfig | None = None) -> FastAPI:
         settings = await request.app.state.store.get_settings()
         return provider_catalog(settings.telephony)
 
+    @app.get("/api/telephony/inbound")
+    async def incoming_status(request: Request) -> list[dict[str, Any]]:
+        return await request.app.state.incoming.status()
+
+    @app.post("/api/telephony/{provider}/inbound")
+    async def incoming_cloud(
+        provider: Literal["aliyun", "tencent"],
+        request: Request,
+        body: dict[str, Any],
+        token: str | None = None,
+    ) -> dict[str, Any]:
+        from llmautotel.telephony.base import TelephonyError
+        from llmautotel.telephony.cloud import AliyunCallClient, TencentCallClient
+        from llmautotel.telephony.cloud_inbound import (
+            authenticate_cloud_inbound,
+            cloud_inbound_response,
+            parse_cloud_inbound,
+            reject_aliyun_inbound,
+        )
+        from llmautotel.telephony.incoming import IncomingCall
+
+        settings = await request.app.state.store.get_settings()
+        config = getattr(settings.telephony, provider)
+        if not authenticate_cloud_inbound(
+            provider,
+            config,
+            body,
+            token,
+            timestamp=request.headers.get("timestamp"),
+            auth=request.headers.get("auth"),
+        ):
+            raise HTTPException(401, "来电接入未启用或鉴权失败")
+        call = parse_cloud_inbound(provider, body)
+
+        async def hangup(reason: str) -> None:
+            client = AliyunCallClient(config) if provider == "aliyun" else TencentCallClient(config)
+            try:
+                await client.hangup(call.remote_id)
+            finally:
+                await client.close()
+
+        incoming = IncomingCall(provider, call.remote_id, call.caller, call.callee, hangup=hangup)
+        try:
+            record = await request.app.state.sessions.accept_incoming(
+                incoming, listener_settings=settings
+            )
+        except HTTPException:
+            if provider == "tencent":
+                return {"CallInBound": {}}
+            try:
+                await reject_aliyun_inbound(config, call.remote_id)
+            except TelephonyError:
+                raise HTTPException(503, "来电拒接失败，请检查云平台状态") from None
+            raise HTTPException(409, "当前无法接听此来电，已请求挂断") from None
+        response_config = config
+        if provider == "tencent":
+            response_config = config.model_copy(
+                update={
+                    "inbound_ai_agent_id": record.settings["telephony"]["tencent"][
+                        "inbound_ai_agent_id"
+                    ]
+                }
+            )
+        return cloud_inbound_response(provider, response_config, record.id)
+
     @app.post("/api/calls", status_code=201)
     async def start_call(request: Request) -> dict[str, Any]:
         return await request.app.state.sessions.start()
@@ -80,10 +150,35 @@ def create_app(runtime: RuntimeConfig | None = None) -> FastAPI:
         provider: Literal["aliyun", "tencent"],
         body: dict[str, Any],
         request: Request,
-    ) -> StreamingResponse:
+    ) -> Response:
         from llmautotel.telephony.base import TelephonyError
 
-        voice = await request.app.state.sessions.phone_runtime(provider)
+        try:
+            voice = await request.app.state.sessions.phone_runtime(provider)
+        except HTTPException as error:
+            if (
+                error.status_code != 409
+                or await request.app.state.sessions.active_record() is not None
+            ):
+                raise
+            from llmautotel.telephony.cloud_inbound import authenticated_gateway_probe
+
+            settings = await request.app.state.store.get_settings()
+            # 读取配置会让出执行权，期间可能已有浏览器或电话占用同一槽位。
+            if await request.app.state.sessions.active_record() is not None:
+                raise
+            probe = authenticated_gateway_probe(
+                settings, provider, body, request.headers.get("authorization")
+            )
+            if probe is None:
+                raise
+            if isinstance(probe, dict):
+                return JSONResponse(probe, headers={"Cache-Control": "no-store"})
+            return StreamingResponse(
+                iter(probe),
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+            )
         if not voice.authenticate(request.headers.get("authorization")):
             raise HTTPException(401, "模型网关鉴权失败")
         try:
@@ -97,11 +192,11 @@ def create_app(runtime: RuntimeConfig | None = None) -> FastAPI:
         )
 
     @app.post("/api/telephony/aliyun/llm")
-    async def aliyun_llm(body: dict[str, Any], request: Request) -> StreamingResponse:
+    async def aliyun_llm(body: dict[str, Any], request: Request) -> Response:
         return await cloud_completion("aliyun", body, request)
 
     @app.post("/api/telephony/tencent/llm/chat/completions")
-    async def tencent_llm(body: dict[str, Any], request: Request) -> StreamingResponse:
+    async def tencent_llm(body: dict[str, Any], request: Request) -> Response:
         return await cloud_completion("tencent", body, request)
 
     @app.post("/api/telephony/{provider}/events")

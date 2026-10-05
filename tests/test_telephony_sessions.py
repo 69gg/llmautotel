@@ -218,6 +218,7 @@ async def test_stop_failure_is_safe_and_still_releases_slot(tmp_path: Path) -> N
 def test_cloud_requires_llm_and_sales_but_not_local_asr_tts() -> None:
     settings = AppSettings.model_validate(
         {
+            "conversation": {"mode": "sales"},
             "sales": {"goal": "预约演示", "product_info": "产品功能"},
             "llm": {"base_url": "http://llm.test/v1", "model": "configured-model"},
             "telephony": {

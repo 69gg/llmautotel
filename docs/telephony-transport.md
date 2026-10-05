@@ -1,6 +1,6 @@
 # 电话媒体与现有语音管线
 
-电话接入通过 `PhoneTransport` 注入原有 `VoiceSession`。ASR、文本 LLM、TTS、Silero VAD、被打断草稿背景、销售工具及句级文字记录共用原实现；provider 只负责电话拨号、原始音频、播放清理与挂断。
+电话接入通过 `PhoneTransport` 注入原有 `VoiceSession`。ASR、文本 LLM、TTS、Silero VAD、打断草稿背景、按模式选择的咨询／销售工具及句级记录共用原实现；provider 负责接管已有来电或显式外呼，以及原始音频、播放清理与挂断。来电工厂传入 `IncomingCall`，仅接听已有通道，接口见 [来电接入](telephony-inbound.md)。
 
 ```python
 from llmautotel.telephony.freeswitch import FreeSwitchDriver

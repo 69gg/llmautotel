@@ -18,6 +18,7 @@ from llmautotel.store import Store
 def configured_settings() -> AppSettings:
     return AppSettings.model_validate(
         {
+            "conversation": {"mode": "sales"},
             "sales": {"goal": "订阅产品", "product_info": "每月10元", "opening": "你好"},
             "asr": {"base_url": "http://asr.test/v1", "model": "asr", "api_key": "ASR_SECRET"},
             "llm": {"base_url": "http://llm.test/v1", "model": "llm", "api_key": "LLM_SECRET"},
