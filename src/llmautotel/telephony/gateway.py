@@ -28,6 +28,7 @@ from llmautotel.telephony.cloud import (
     native_tencent_tools,
     parse_cloud_reports,
 )
+from llmautotel.telephony.cloud_inbound import cloud_gateway_call_id
 from llmautotel.voice import VoiceCallbacks
 
 
@@ -69,7 +70,10 @@ class CloudVoiceSession:
         *,
         client: CloudClient | None = None,
         llm: CompatibleLLMService | None = None,
+        incoming_remote_id: str | None = None,
     ) -> None:
+        if incoming_remote_id is not None and not incoming_remote_id:
+            raise ValueError("来电平台会话标识不能为空")
         self.provider = provider
         self.number = number
         self.call_id = call_id
@@ -82,7 +86,8 @@ class CloudVoiceSession:
             else TencentCallClient(self.config)
         )
         self._llm = llm
-        self._remote_id: str | None = None
+        self.incoming = incoming_remote_id is not None
+        self._remote_id: str | None = incoming_remote_id
         self._created = asyncio.Event()
         self._finished = asyncio.Event()
         self._stop_reason: str | None = None
@@ -101,7 +106,7 @@ class CloudVoiceSession:
         return self._remote_id
 
     def authenticate(self, authorization: str | None) -> bool:
-        if not self.config.enabled:
+        if not self.config.enabled or (self.incoming and not self.config.inbound_enabled):
             return False
         expected = self.config.gateway_token
         token = expected.get_secret_value() if expected else ""
@@ -118,20 +123,29 @@ class CloudVoiceSession:
         return authenticate_cloud_event(self.config, token, authorization)
 
     def validate_gateway(self, body: dict[str, Any]) -> None:
-        if not self.config.enabled or self._finished.is_set() or self._stop_reason:
+        if (
+            not self.config.enabled
+            or (self.incoming and not self.config.inbound_enabled)
+            or self._finished.is_set()
+            or self._stop_reason
+        ):
             raise HTTPException(409, "此通电话已结束或已失效")
         if body.get("stream") is not True:
             raise HTTPException(422, "模型网关仅支持流式请求")
         if self.provider == "aliyun":
-            biz = body.get("biz_params")
-            local_id = body.get("out_id") or (biz.get("call_id") if isinstance(biz, dict) else None)
+            local_id = cloud_gateway_call_id(self.provider, body)
             session_id = body.get("session_id")
             if local_id != self.call_id or (self.remote_id and session_id != self.remote_id):
                 raise HTTPException(409, "电话会话标识不匹配")
             if not isinstance(session_id, str) or not session_id:
                 raise HTTPException(422, "缺少电话平台会话标识")
-        elif body.get("call_id") != self.call_id:
+        elif cloud_gateway_call_id(self.provider, body) != self.call_id:
             raise HTTPException(409, "电话会话标识不匹配")
+        elif self.incoming:
+            # OpenAI 协议没有规定电话 SessionId；若平台提供则必须精确匹配。
+            remote_id = body.get("session_id") or body.get("SessionId")
+            if remote_id is not None and remote_id != self.remote_id:
+                raise HTTPException(409, "电话平台会话标识不匹配")
         messages = body.get("messages")
         if not isinstance(messages, list) or any(
             not isinstance(message, dict)
@@ -299,22 +313,29 @@ class CloudVoiceSession:
         try:
             if self._finished.is_set():
                 return self._stop_reason or self._reason
-            await self.callbacks.on_state("dialing")
-            gateway_url = (
-                self.settings.telephony.public_base_url + f"/api/telephony/{self.provider}/llm"
-            )
-            self._start_task = asyncio.create_task(
-                self._client.start(
-                    self.number,
-                    self.call_id,
-                    self.settings,
-                    gateway_url,
+            if self.incoming:
+                if not self.config.enabled or not self.config.inbound_enabled:
+                    raise TelephonyError("电话来电接入未启用")
+                self._created.set()
+                # 回调发生在振铃阶段，尚无官方接听/实际播放确认。
+                await self.callbacks.on_state("ringing")
+            else:
+                await self.callbacks.on_state("dialing")
+                gateway_url = (
+                    self.settings.telephony.public_base_url + f"/api/telephony/{self.provider}/llm"
                 )
-            )
-            # 不能取消外呼创建后忘掉远端 callId；迟到成功也要收到并挂断。
-            self._remote_id = await asyncio.shield(self._start_task)
-            self._created.set()
-            await self.callbacks.on_state("ringing")
+                self._start_task = asyncio.create_task(
+                    self._client.start(
+                        self.number,
+                        self.call_id,
+                        self.settings,
+                        gateway_url,
+                    )
+                )
+                # 不能取消外呼创建后忘掉远端 callId；迟到成功也要收到并挂断。
+                self._remote_id = await asyncio.shield(self._start_task)
+                self._created.set()
+                await self.callbacks.on_state("ringing")
             if self._stop_reason:
                 await self._hangup()
             try:

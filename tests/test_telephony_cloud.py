@@ -32,6 +32,7 @@ from llmautotel.telephony.settings import AliyunSettings, TencentSettings
 @pytest.fixture
 def settings() -> AppSettings:
     return AppSettings(
+        conversation={"mode": "sales"},
         sales=SalesSettings(
             goal="订阅测试产品",
             product_info="每月10元，可整理资料。",

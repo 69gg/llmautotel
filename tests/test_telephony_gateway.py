@@ -96,6 +96,7 @@ class TrackedSSE(httpx2.AsyncByteStream):
 
 def configured_settings() -> AppSettings:
     settings = AppSettings(
+        conversation={"mode": "sales"},
         sales=SalesSettings(
             goal="订阅测试产品",
             product_info="10元，整理资料。",

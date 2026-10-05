@@ -272,9 +272,9 @@ def _endpoint(config: CloudSettings) -> tuple[str, str]:
 
 
 def cloud_sales_prompt(settings: AppSettings, provider: CloudProvider) -> str:
-    """复用现有销售规则，替换只适用于 Pipecat 的工具约定。"""
-    from llmautotel.hangup import HANGUP_POLICY
-    from llmautotel.voice import sales_prompt
+    """兼容原函数名，按当前对话模式替换仅适用于 Pipecat 的工具约定。"""
+    from llmautotel.hangup import CONSULTATION_HANGUP_POLICY, HANGUP_POLICY
+    from llmautotel.voice import conversation_prompt
 
     policy = (
         "区分拒绝目标行动和直接结束通话。首次明确拒绝目标行动时，"
@@ -282,6 +282,12 @@ def cloud_sales_prompt(settings: AppSettings, provider: CloudProvider) -> str:
         "不得调查用途或询问是否要挂断。再次明确拒绝，或直接要求结束时，"
         "告别并结束通话。意思不明确、嫌贵、犹豫或仍提问题时继续回答和推销，"
         "不能猜测结束意愿。告别包含祝福，例如‘好的，祝您生活愉快，再见。’。\n"
+        if settings.conversation.mode == "sales"
+        else "这是来电产品咨询，不做销售挽留。拒绝购买、嫌贵、犹豫或暂时不需要某项功能"
+        "不能据此推断咨询已结束。仅当最新用户发言明确要求结束通话，"
+        "或明确表示咨询已结束、无需继续帮助时，告别并结束通话。"
+        "仍有问题或意思不明确时继续答疑，必要时仅澄清当前问题，不询问是否挂断。"
+        "告别包含祝福，例如‘好的，祝您生活愉快，再见。’。\n"
     )
     if provider == "aliyun":
         policy += (
@@ -293,7 +299,10 @@ def cloud_sales_prompt(settings: AppSettings, provider: CloudProvider) -> str:
             "仅在明确可以结束时，使用请求中提供的 call_end 工具及其真实参数定义；"
             "保留带祝福的告别，不能编造工具参数。未提供该工具时不要假装挂断。\n"
         )
-    return sales_prompt(settings).replace(HANGUP_POLICY, policy)
+    local_policy = (
+        HANGUP_POLICY if settings.conversation.mode == "sales" else CONSULTATION_HANGUP_POLICY
+    )
+    return conversation_prompt(settings).replace(local_policy, policy)
 
 
 def cloud_context_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -440,7 +449,7 @@ class TencentCallClient:
             "Model": settings.llm.model,
             "SystemPrompt": cloud_sales_prompt(settings, "tencent"),
             "LLMExtraBody": json.dumps({"call_id": call_id}),
-            "WelcomeType": 0 if settings.sales.opening.strip() else 1,
+            "WelcomeType": 0 if settings.active_conversation.opening.strip() else 1,
             "WelcomeMessagePriority": 0,
             "InterruptMode": 0,
             "Languages": ["zh"],
@@ -450,8 +459,8 @@ class TencentCallClient:
                 "保留带祝福的告别再结束。嫌贵、犹豫、含糊或仍提问题时不能调用。"
             ),
         }
-        if settings.sales.opening.strip():
-            parameters["WelcomeMessage"] = settings.sales.opening
+        if settings.active_conversation.opening.strip():
+            parameters["WelcomeMessage"] = settings.active_conversation.opening
         for field, value in (
             ("VoiceType", self.config.tts_voice),
             ("InterruptSpeechDuration", self.config.interrupt_speech_duration_ms),
