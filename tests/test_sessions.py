@@ -5,6 +5,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from aiortc import RTCIceServer
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
@@ -67,6 +68,40 @@ async def test_simultaneous_starts_reserve_only_one_call(tmp_path: Path) -> None
         == 1
     )
     await manager.close()
+
+
+def test_ice_reaches_client_and_transport_without_persisting_relay_credentials(
+    tmp_path: Path,
+) -> None:
+    relay = RTCIceServer(
+        urls="turn:relay.test:3478?transport=tcp",
+        username="relay-user",
+        credential="TURN_TEST_SECRET",
+    )
+    runtime = RuntimeConfig(data_dir=tmp_path, ice_servers=[relay])
+    with TestClient(create_app(runtime)) as client:
+        client.put("/api/settings", json=configured_settings().private())
+        # 运行时复制接入参数，调用方修改不改变本次服务的传输配置。
+        relay.credential = "CHANGED_SECRET"
+        started = client.post("/api/calls").json()
+        ice = started["connection"]["iceConfig"]["iceServers"]
+        assert ice == [
+            {
+                "urls": "turn:relay.test:3478?transport=tcp",
+                "username": "relay-user",
+                "credential": "TURN_TEST_SECRET",
+                "credentialType": "password",
+            }
+        ]
+        sessions = client.app.state.sessions
+        assert sessions._active.handler._ice_servers == [RTCIceServer(**ice[0])]
+        call_id = started["call"]["id"]
+        client.post(f"/api/calls/{call_id}/end")
+        assert "TURN_TEST_SECRET" not in client.get(f"/api/calls/{call_id}").text
+        assert "TURN_TEST_SECRET" not in client.get("/api/settings").text
+        with sqlite3.connect(tmp_path / "app.sqlite3") as connection:
+            persisted = connection.iterdump()
+            assert all("TURN_TEST_SECRET" not in row for row in persisted)
 
 
 async def test_abandoned_connection_expires_and_releases_slot(tmp_path: Path) -> None:
@@ -156,6 +191,7 @@ def test_history_storage_never_contains_keys_and_delete_preserves_configuration(
         assert client.delete(f"/api/calls/{first['id']}").status_code == 204
         assert client.delete(f"/api/calls/{first['id']}").status_code == 404
         assert client.get(f"/api/calls/{second['id']}").status_code == 200
-        assert all(client.get("/api/settings").json()[stage]["api_key_set"] for stage in (
-            "asr", "llm", "tts"
-        ))
+        assert all(
+            client.get("/api/settings").json()[stage]["api_key_set"]
+            for stage in ("asr", "llm", "tts")
+        )

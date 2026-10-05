@@ -15,6 +15,10 @@ uv run llmautotel
 
 打开 `http://127.0.0.1:8765`。默认只监听本机，语音需要浏览器的本机或 HTTPS 安全上下文。
 
+## 服务器部署
+
+Linux 服务器使用独立服务用户、systemd 和受限权限 SQLite。没有域名时可通过 SSH 隧道访问 localhost；代码、数据与凭据分开发布，电话线路保持原有开关。步骤和运行模板见 [服务器部署说明](docs/server-deployment.md)。
+
 ## 使用
 
 1. 进入“对话配置”，选择默认的产品咨询，填写产品资料和回复要求。固定开场白可留空，由 AI 生成简短欢迎。选择销售模式可使用原有销售目标、资料和话术；两组内容独立保存，切换不会删除。
@@ -98,7 +102,7 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-前端开发服务器代理 `/api` 到本机后端。后端环境变量见 [.env.example](.env.example)，程序不自动加载该文件。可通过 `LLMAUTOTEL_HOST`、`LLMAUTOTEL_PORT`、`LLMAUTOTEL_DATA_DIR` 和 `LLMAUTOTEL_CONNECTION_TIMEOUT_SECONDS` 调整运行配置。前端代理与 REST 超时见 [前端说明](frontend/README.md)。模型参数在网页填写。
+前端开发服务器代理 `/api` 到本机后端。后端环境变量见 [.env.example](.env.example)，程序不自动加载该文件。可通过 `LLMAUTOTEL_HOST`、`LLMAUTOTEL_PORT`、`LLMAUTOTEL_DATA_DIR` 和 `LLMAUTOTEL_CONNECTION_TIMEOUT_SECONDS` 调整运行配置。跨网络网页语音可设置 `LLMAUTOTEL_ICE_SERVERS`，默认无外部中继，配置与服务端部署见 [服务器部署](docs/server-deployment.md)。前端代理与 REST 超时见 [前端说明](frontend/README.md)。模型参数在网页填写。
 
 语音业务位于 `src/llmautotel/voice.py`，生成背景保留位于 `conversation.py`，内部标记过滤位于 `speech.py`，挽留与挂断工具位于 `hangup.py`，连接和会话管理位于 `sessions.py`，三个模型协议适配位于 `providers.py`，电话 provider 和模型网关位于 `telephony/`。升级 Pipecat 前需核对锁定版本的句级音频和回合结束钩子；原因见 [语音管线文档](docs/voice.md)。
 

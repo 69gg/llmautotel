@@ -31,7 +31,7 @@ ASR / TTS 还可设置 `protocol` 为 `openai`（默认）或 `mimo`；MiMo ASR 
 校验错误返回 HTTP 422，`detail` 列表仅包含字段位置、错误类型与说明，不回显输入值。
 API 根地址必须使用 HTTP / HTTPS、有效端口，不包含 URL 凭据、查询参数或片段；ASR 语言使用 Pipecat 支持的语言代码。
 
-开始原生／网页会话前要求当前模式的产品资料（销售额外要求目标）、三个服务地址与模型名，以及 TTS 音色。云托管模式只要求本机 LLM 及当前模式资料，平台负责 ASR／TTS。密钥允许留空以接入无鉴权的本机服务。网页、外呼与来电共用一通限制，竞争返回 HTTP 409；原生来电忙线拒接，云拒接格式见下文。新配置只影响下一通。POST `/calls` 返回的 `connection` 可交给 Pipecat SDK `connect()`；默认无外部 ICE 服务器。
+开始原生／网页会话前要求当前模式的产品资料（销售额外要求目标）、三个服务地址与模型名，以及 TTS 音色。云托管模式只要求本机 LLM 及当前模式资料，平台负责 ASR／TTS。密钥允许留空以接入无鉴权的本机服务。网页、外呼与来电共用一通限制，竞争返回 HTTP 409；原生来电忙线拒接，云拒接格式见下文。新配置只影响下一通。POST `/calls` 返回的 `connection` 可交给 Pipecat SDK `connect()`；默认无外部 ICE 服务器。运行环境的 `LLMAUTOTEL_ICE_SERVERS` 可设置 STUN／TURN，后端及 `connection.iceConfig.iceServers` 使用同一配置。中继密码仅用于本次协商，不写入 `call`、历史或配置回读；浏览器建立连接需要收到该密码。详情见 [服务器部署](server-deployment.md)。
 
 结束接口可省略 body，默认原因为 `user_hangup`；也可发送 `{ "reason": "connection_lost" }`。已有结束原因不被后到请求覆盖。SDK 状态与已提交文字通过 RTVI 数据通道同步，见 [语音管线](voice.md)。
 

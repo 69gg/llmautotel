@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
-from dataclasses import dataclass
+from copy import deepcopy
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
+from functools import partial
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 from uuid import uuid4
 
+from aiortc import RTCIceServer
 from fastapi import HTTPException
 
 from llmautotel.models import AppSettings, CallRecord, TranscriptEntry
@@ -72,13 +75,17 @@ def default_voice_factory(
     return VoiceSession(connection, settings, callbacks)
 
 
-def default_handler_factory() -> SmallWebRTCRequestHandler:
+def default_handler_factory(
+    ice_servers: list[RTCIceServer] | None = None,
+) -> SmallWebRTCRequestHandler:
     from pipecat.transports.smallwebrtc.request_handler import (
         ConnectionMode,
         SmallWebRTCRequestHandler,
     )
 
-    return SmallWebRTCRequestHandler(connection_mode=ConnectionMode.SINGLE, ice_servers=[])
+    return SmallWebRTCRequestHandler(
+        connection_mode=ConnectionMode.SINGLE, ice_servers=ice_servers or []
+    )
 
 
 @dataclass
@@ -106,7 +113,8 @@ class SessionManager:
         voice_factory: VoiceFactory = default_voice_factory,
         phone_factory: PhoneFactory = default_phone_factory,
         incoming_factory: IncomingFactory = default_incoming_factory,
-        handler_factory: Callable[[], SmallWebRTCRequestHandler] = default_handler_factory,
+        handler_factory: Callable[[], SmallWebRTCRequestHandler] | None = None,
+        ice_servers: list[RTCIceServer] | None = None,
     ) -> None:
         self.store = store
         self._active: ActiveCall | None = None
@@ -114,7 +122,10 @@ class SessionManager:
         self._voice_factory = voice_factory
         self._phone_factory = phone_factory
         self._incoming_factory = incoming_factory
-        self._handler_factory = handler_factory
+        self._ice_servers = deepcopy(ice_servers or [])
+        self._handler_factory = handler_factory or partial(
+            default_handler_factory, ice_servers=self._ice_servers
+        )
         self._connection_timeout = connection_timeout_seconds
 
     async def start(self) -> dict[str, Any]:
@@ -134,7 +145,16 @@ class SessionManager:
                 "call": record.model_dump(mode="json"),
                 "connection": {
                     "webrtcRequestParams": {"endpoint": f"/api/offer?call_id={record.id}"},
-                    "iceConfig": {"iceServers": []},
+                    "iceConfig": {
+                        "iceServers": [
+                            {
+                                key: value
+                                for key, value in asdict(server).items()
+                                if value is not None
+                            }
+                            for server in self._ice_servers
+                        ]
+                    },
                 },
             }
 

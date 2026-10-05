@@ -32,7 +32,9 @@ def create_app(runtime: RuntimeConfig | None = None) -> FastAPI:
         await app.state.store.finalize_unfinished_calls()
         app.state.settings_lock = asyncio.Lock()
         app.state.sessions = SessionManager(
-            app.state.store, connection_timeout_seconds=config.connection_timeout_seconds
+            app.state.store,
+            connection_timeout_seconds=config.connection_timeout_seconds,
+            ice_servers=config.ice_servers,
         )
         app.state.incoming = IncomingService(app.state.store, app.state.sessions)
         app.state.incoming.start()

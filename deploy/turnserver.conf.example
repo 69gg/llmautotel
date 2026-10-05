@@ -1,0 +1,28 @@
+# 模板已按 coturn 4.6.1 核对；替换公开 IPv4、用户名和随机密码后使用。
+listening-port=3478
+listening-ip=REPLACE_WITH_PUBLIC_IPV4
+relay-ip=REPLACE_WITH_PUBLIC_IPV4
+min-port=55000
+max-port=55100
+realm=llmautotel
+lt-cred-mech
+user=REPLACE_WITH_USERNAME:REPLACE_WITH_RANDOM_PASSWORD
+fingerprint
+user-quota=4
+total-quota=8
+max-bps=1048576
+relay-threads=2
+# 浏览器至中继使用 TCP，中继至同服务器上的 WebRTC 使用 UDP。
+no-udp
+no-tcp-relay
+no-tls
+no-dtls
+no-multicast-peers
+no-cli
+# 仅允许中继到指定应用服务器，禁止任意地址及内部网络。
+denied-peer-ip=0.0.0.0-255.255.255.255
+denied-peer-ip=::-ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+allowed-peer-ip=REPLACE_WITH_PUBLIC_IPV4
+userdb=/var/lib/llmautotel-turn/turndb
+log-file=stdout
+simple-log
