@@ -17,6 +17,8 @@ from llmautotel.models import AppSettings
 from llmautotel.telephony.cloud import AliyunCallClient, CloudProvider
 from llmautotel.telephony.settings import AliyunSettings, CloudSettings, TencentSettings
 
+type GatewayProbeResponse = tuple[str, ...] | dict[str, Any]
+
 
 class AliyunInboundRequest(BaseModel):
     """AICCS 应用的呼入开场变量回调，不是最终文字回执。"""
@@ -184,10 +186,15 @@ def authenticated_gateway_probe(
     provider: CloudProvider,
     body: dict[str, Any],
     authorization: str | None,
-) -> tuple[str, ...] | None:
+) -> GatewayProbeResponse | None:
     """无通话时的纯协议探测；调用方必须先确认全局没有活动通话。"""
     config = getattr(settings.telephony, provider)
-    if not config.enabled or not config.inbound_enabled or body.get("stream") is not True:
+    if not config.enabled or not config.inbound_enabled:
+        return None
+    stream = body.get("stream")
+    if provider == "aliyun" and stream is not True:
+        return None
+    if stream is not True and stream is not False and stream is not None:
         return None
     expected = config.gateway_token.get_secret_value() if config.gateway_token else ""
     if provider == "tencent":
@@ -219,6 +226,21 @@ def authenticated_gateway_probe(
         "created": int(time.time()),
         "model": settings.llm.model,
     }
+    text = "模型网关连接正常；此回复仅验证协议，未调用模型或建立电话。"
+    if stream is not True:
+        return {
+            **identity,
+            "object": "chat.completion",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": text, "refusal": None},
+                    "finish_reason": "stop",
+                    "logprobs": None,
+                }
+            ],
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        }
     response = {
         **identity,
         "choices": [
@@ -226,7 +248,7 @@ def authenticated_gateway_probe(
                 "index": 0,
                 "delta": {
                     "role": "assistant",
-                    "content": "模型网关连接正常；此回复仅验证协议，未调用模型或建立电话。",
+                    "content": text,
                 },
                 "finish_reason": None,
             }

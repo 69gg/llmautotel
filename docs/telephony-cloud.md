@@ -33,9 +33,9 @@
 
 ### 云控制台模型网关探测
 
-阿里官方[网关 SSE 调测样例](https://help.aliyun.com/zh/aiccs/user-guide/large-model-gateway-docking-parameter-protocol)仅发送 `model`、`messages`、`stream=true`，不带通话标识。两家控制台通过本机网关进行这样的无会话流式校验时，本机仅在没有任何活动通话、总开关与来电开关均开启、网关鉴权正确的条件下返回固定的标准 SSE 健康响应；不调用实际文本模型、不创建通话、也不保存文字历史。
+阿里官方[网关 SSE 调测样例](https://help.aliyun.com/zh/aiccs/user-guide/large-model-gateway-docking-parameter-protocol)仅发送 `model`、`messages`、`stream=true`，不带通话标识。两家控制台通过本机网关进行这样的无会话校验时，本机仅在没有任何活动通话、总开关与来电开关均开启、网关鉴权正确的条件下返回固定的协议健康响应；不调用实际文本模型、不创建通话、也不保存文字历史。阿里按正式协议只支持流式 SSE；腾讯兼容标准 OpenAI 的 SSE 和非流式 `chat.completion` JSON，后者在 `stream=false`、省略 `stream` 或为 `null` 时返回，token 用量为零。
 
-任何已提供的绑定字段（包括空值）、通话工具或会话变量标记都不能降级为探测；已有活动通话时仍按当前通话协议严格校验。这个结果只证明模型网关协议和鉴权可达，不能证明真实模型、语音或电话接通正常。腾讯公开的[模型配置说明](https://cloud.tencent.com/document/product/679/116187)要求校验，但未公开控制台实际校验的完整请求；当前支持标准 `stream=true` 探测，其真实控制台行为仍需账户验证，非流式校验不在该探测范围内。
+任何已提供的绑定字段（包括空值）、通话工具或会话变量标记都不能降级为探测；已有活动通话时仍按当前通话协议严格校验。这个结果只证明模型网关协议和鉴权可达，不能证明真实模型、语音或电话接通正常。腾讯公开的[模型配置说明](https://cloud.tencent.com/document/product/679/116187)要求校验，但未公开控制台实际校验的完整请求；当前按标准 OpenAI 协议兼容两种探测应答，其真实控制台行为仍需账户验证。真实通话的模型网关仍只接受 `stream=true`，不会把漏带会话标识的活动通话请求降级为健康探测。
 
 ## 来电接待与线路关系
 
