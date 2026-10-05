@@ -74,3 +74,14 @@ input, textarea, select { width: 100%; outline: none; border: 1px solid #dce1d5;
 .record-source p { color: #607851; font-size: 11px; line-height: 1.9; margin: 8px 0 0; overflow-wrap: anywhere; }
 @media (max-width: 800px) { .sidebar nav { gap: 2px; }.nav-item { padding-inline: 9px; } }
 @media (max-width: 560px) { .phone-fields { grid-template-columns: 1fr; }.telephone-page .page-heading { flex-wrap: wrap; }.telephone-layout .call-surface { min-height: 480px; }.telephone-config { margin-top: 24px; } }
+
+.telephone-view-switch { display: flex; gap: 25px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+.telephone-view-switch .text-button { padding: 10px 0 13px; color: var(--text-muted); border-bottom: 2px solid transparent; transition: color .2s, border-color .2s; }
+.telephone-view-switch .selected { color: var(--accent); border-bottom-color: var(--accent); }
+.inbound-monitor { margin-bottom: 28px; }
+.inbound-status-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 20px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+.inbound-status-row p { grid-column: 1 / -1; margin: 0; font-size: 11px; color: #aa5347; overflow-wrap: anywhere; }
+.inbound-state { color: var(--accent); transition: color .2s; }
+.inbound-state.failed { color: #aa5347; }
+.telephone-number-note { margin: 10px 0 0; font-size: 11px; color: var(--text-muted); overflow-wrap: anywhere; }
+.phone-fields .provider-enabled { margin: 0 0 18px; align-self: center; }

@@ -1,9 +1,18 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, request } from '../api';
+import { api, ApiError, request } from '../api';
 
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe('服务请求', () => {
+  it('接听监控查询正式状态接口并支持取消，不发送启用或拨号操作', async () => {
+    const statuses = [{ provider: 'asterisk', state: 'disabled', error: null }];
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify(statuses)));
+    vi.stubGlobal('fetch', fetch);
+    const controller = new AbortController();
+    await expect(api.inboundProviders(controller.signal)).resolves.toEqual(statuses);
+    expect(fetch).toHaveBeenCalledWith('/api/telephony/inbound', expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(fetch.mock.calls[0][1]).not.toHaveProperty('method');
+  });
   it('显示后端业务错误', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ detail: '已有一通会话' }), { status: 409 })));
     await expect(request('/api/settings')).rejects.toThrow('已有一通会话');

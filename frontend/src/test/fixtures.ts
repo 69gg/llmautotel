@@ -1,6 +1,8 @@
 import type { Settings } from '../types';
 
 export const fixtureSettings: Settings = {
+  conversation: { mode: 'sales' },
+  consultation: { product_info: '示例文档工具支持导出 PDF。', instructions: '', opening: '' },
   sales: { goal: '介绍订阅服务', product_info: '月费 20 元', instructions: '', opening: '' },
   asr: { base_url: '', model: '', timeout_seconds: 30, api_key_set: true, protocol: 'openai', language: 'zh' },
   llm: { base_url: '', model: '', timeout_seconds: 30, api_key_set: false, thinking: null, reasoning_effort: null },

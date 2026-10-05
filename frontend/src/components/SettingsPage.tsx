@@ -1,11 +1,11 @@
 import { useState, type FormEvent } from 'react';
 import { api } from '../api';
-import { settingsUpdate, type ProviderName, type SecretDrafts, type Settings } from '../types';
+import { activeConversation, conversationMode, settingsUpdate, type ConversationMode, type ProviderName, type SecretDrafts, type Settings } from '../types';
 import { Icon } from './Icon';
 
 const providers: { name: ProviderName; title: string; description: string; label: string }[] = [
-  { name: 'asr', title: '语音识别', description: '将你的话转换成文字', label: 'ASR' },
-  { name: 'llm', title: '文本模型', description: '理解目标，组织回答', label: 'LLM' },
+  { name: 'asr', title: '语音识别', description: '将用户语音转换成文字', label: 'ASR' },
+  { name: 'llm', title: '文本模型', description: '理解问题，组织回答', label: 'LLM' },
   { name: 'tts', title: '语音合成', description: '将回答转换成声音', label: 'TTS' },
 ];
 
@@ -17,8 +17,18 @@ export function SettingsPage({ settings, onSave }: { settings: Settings; onSave:
   const [error, setError] = useState('');
   const [dirty, setDirty] = useState(false);
 
-  function updateSales(key: keyof Settings['sales'], value: string) {
-    setDraft(current => ({ ...current, sales: { ...current.sales, [key]: value } }));
+  const mode = conversationMode(draft);
+  const conversation = activeConversation(draft);
+
+  function updateMode(value: ConversationMode) {
+    setDraft(current => ({ ...current, conversation: { mode: value } }));
+    setDirty(true);
+    setMessage('');
+  }
+
+  function updateConversation(key: keyof Settings['sales'], value: string) {
+    const section = mode === 'sales' ? 'sales' : 'consultation';
+    setDraft(current => ({ ...current, [section]: { ...current[section], [key]: value } }));
     setDirty(true);
     setMessage('');
   }
@@ -54,13 +64,14 @@ export function SettingsPage({ settings, onSave }: { settings: Settings; onSave:
   }
 
   return <form className="settings-form" onSubmit={save}>
-    <div className="page-heading"><div><p className="eyebrow">对话设置</p><h1>配置你的下一通对话</h1><p className="subtle">目标、资料和模型，组成一次完整的语音对话。</p></div><button className="button primary save-top" type="submit" disabled={saving}><Icon name={dirty ? 'arrow' : 'check'} size={17} />{saving ? '保存中…' : '保存配置'}</button></div>
+    <div className="page-heading"><div><p className="eyebrow">对话设置</p><h1>配置你的下一通对话</h1><p className="subtle">选择咨询或销售，配置资料、提示词和模型。</p></div><button className="button primary save-top" type="submit" disabled={saving}><Icon name={dirty ? 'arrow' : 'check'} size={17} />{saving ? '保存中…' : '保存配置'}</button></div>
     <section className="config-section" aria-labelledby="sales-heading">
-      <div className="section-heading"><span className="section-index">01</span><div><h2 id="sales-heading">对话目标</h2><p>告诉 AI 要做什么，以及可以依据哪些信息。</p></div></div>
+      <div className="section-heading"><span className="section-index">01</span><div><h2 id="sales-heading">对话模式</h2><p>告诉 AI 要做什么，以及可以依据哪些信息。</p></div></div>
       <div className="form-content">
-        <label className="field"><span>销售目标</span><textarea rows={2} value={draft.sales.goal} onChange={event => updateSales('goal', event.target.value)} placeholder="例如：介绍产品，邀请用户订阅" /></label>
-        <label className="field"><span>产品资料</span><textarea rows={5} value={draft.sales.product_info} onChange={event => updateSales('product_info', event.target.value)} placeholder="填写产品功能、价格、适用人群和购买方式…" /><small>AI 将依据这些资料回答，请提供准确的信息。</small></label>
-        <div className="field-pair"><label className="field"><span>话术要求 <em>可选</em></span><textarea rows={3} value={draft.sales.instructions} onChange={event => updateSales('instructions', event.target.value)} placeholder="例如：语气自然、每次回答简短，先了解需求" /></label><label className="field"><span>固定开场白 <em>可选</em></span><textarea rows={3} value={draft.sales.opening} onChange={event => updateSales('opening', event.target.value)} placeholder="留空时，AI 会根据目标生成开场白" /></label></div>
+        <label className="field"><span>对话模式</span><select aria-label="对话模式" value={mode} onChange={event => updateMode(event.target.value as ConversationMode)}><option value="consultation">产品咨询</option><option value="sales">销售推介</option></select><small>两种模式的资料和提示词分别保存，切换不会删除原配置。</small></label>
+        {mode === 'sales' && <label className="field"><span>销售目标</span><textarea rows={2} value={draft.sales.goal} onChange={event => updateConversation('goal', event.target.value)} placeholder="例如：介绍产品，邀请用户订阅" /></label>}
+        <label className="field"><span>产品资料</span><textarea rows={5} value={conversation.product_info} onChange={event => updateConversation('product_info', event.target.value)} placeholder={mode === 'sales' ? '填写产品功能、价格和购买方式…' : '填写产品功能、使用步骤、费用、服务范围和常见问题…'} /><small>AI 将依据这些资料回答，请提供准确的信息。</small></label>
+        <div className="field-pair"><label className="field"><span>{mode === 'sales' ? '话术要求' : '咨询提示词'} <em>可选</em></span><textarea rows={3} value={conversation.instructions} onChange={event => updateConversation('instructions', event.target.value)} placeholder={mode === 'sales' ? '例如：介绍资料支持的价值，每次回答简短' : '例如：先直接回答功能问题；资料不足时说明无法确认'} /></label><label className="field"><span>{mode === 'sales' ? '固定开场白' : '固定欢迎语'} <em>可选</em></span><textarea rows={3} value={conversation.opening} onChange={event => updateConversation('opening', event.target.value)} placeholder={mode === 'sales' ? '留空时，AI 会根据目标生成开场白' : '留空时，AI 接通后先说一句简短欢迎语'} /></label></div>
       </div>
     </section>
     <section className="config-section" aria-labelledby="models-heading">

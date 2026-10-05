@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -36,7 +36,9 @@ const record: CallRecord = {
 };
 
 function page(settings = fixtureSettings) {
-  return render(<TelephonePage settings={settings} onSave={vi.fn()} onConfigure={vi.fn()} onBrowserCall={vi.fn()} />);
+  const rendered = render(<TelephonePage settings={settings} onSave={vi.fn()} onConfigure={vi.fn()} onBrowserCall={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: '手动外呼' }));
+  return rendered;
 }
 
 function StatefulPage({ initial }: { initial: Settings }) {
@@ -47,6 +49,7 @@ function StatefulPage({ initial }: { initial: Settings }) {
 beforeEach(() => {
   vi.spyOn(api, 'telephonyProviders').mockResolvedValue(catalog);
   vi.spyOn(api, 'activeCall').mockResolvedValue(null);
+  vi.spyOn(api, 'inboundProviders').mockResolvedValue(catalog.map(item => ({ provider: item.id, state: 'disabled' as const, error: null })));
 });
 afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 
@@ -90,7 +93,7 @@ describe('电话配置', () => {
     expect(body.telephony.freeswitch).not.toHaveProperty('password');
     expect(body.asr).not.toHaveProperty('api_key');
     expect(JSON.stringify(body)).not.toContain('_set');
-    expect(await screen.findByText('电话配置已保存；仅在手动发起外呼时使用。')).toBeInTheDocument();
+    expect(await screen.findByText('电话配置已保存；已启用的接听线路将建立监听，外呼仍需手动发起。')).toBeInTheDocument();
     expect(screen.getByLabelText('阿里云 AICCS AccessKey Secret')).toHaveValue('');
     expect(storage).not.toHaveBeenCalled();
   });
@@ -100,10 +103,11 @@ describe('电话配置', () => {
     const start = vi.spyOn(api, 'startTelephoneCall');
     vi.spyOn(api, 'saveSettings').mockResolvedValue(configured);
     render(<StatefulPage initial={{ ...configured, telephony: fixtureSettings.telephony }} />);
+    await user.click(screen.getByRole('button', { name: '手动外呼' }));
     await user.click(await screen.findByLabelText('启用 Asterisk'));
     expect(within(screen.getByLabelText('外呼 provider')).getByRole('option', { name: 'Asterisk（未启用）' })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: '保存电话配置' }));
-    await screen.findByText('电话配置已保存；仅在手动发起外呼时使用。');
+    await screen.findByText('电话配置已保存；已启用的接听线路将建立监听，外呼仍需手动发起。');
     expect(within(screen.getByLabelText('外呼 provider')).getByRole('option', { name: 'Asterisk' })).toBeEnabled();
     expect(screen.getByLabelText('外呼 provider')).toHaveValue('');
     expect(start).not.toHaveBeenCalled();
@@ -231,7 +235,7 @@ describe('手动电话外呼', () => {
     page(configured);
     await act(async () => { await Promise.resolve(); });
     await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
-    expect(screen.getByText('外呼失败')).toBeInTheDocument();
+    expect(screen.getByText('电话接入失败')).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('Asterisk 媒体接入失败。');
   });
 });

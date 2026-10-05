@@ -3,9 +3,11 @@ export type AudioProtocol = 'openai' | 'mimo';
 export type ThinkingMode = 'enabled' | 'disabled';
 export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'max';
 export type TelephonyProviderName = 'asterisk' | 'freeswitch' | 'aliyun' | 'tencent';
+export type ConversationMode = 'consultation' | 'sales';
+export interface ConversationConfig { product_info: string; instructions: string; opening: string }
 export interface TelephonyProviderSettings {
   enabled: boolean;
-  [field: string]: string | number | boolean | null;
+  [field: string]: string | number | boolean | string[] | null;
 }
 export interface TelephonySettings extends Record<TelephonyProviderName, TelephonyProviderSettings> {
   public_base_url: string;
@@ -17,7 +19,13 @@ export interface TelephonyProvider {
   mode: 'media' | 'cloud';
   description: string;
   enabled: boolean;
-  fields: { name: string; label: string; type: 'secret' | 'integer' | 'number' | 'string'; nullable: boolean; minimum: number | null; maximum: number | null }[];
+  fields: { name: string; label: string; type: 'secret' | 'integer' | 'number' | 'string' | 'boolean' | 'array'; nullable: boolean; minimum: number | null; maximum: number | null }[];
+}
+
+export interface InboundProviderStatus {
+  provider: TelephonyProviderName;
+  state: 'disabled' | 'incomplete' | 'connecting' | 'listening' | 'failed' | 'pending' | 'awaiting_callback';
+  error: string | null;
 }
 
 export interface ProviderSettings {
@@ -28,6 +36,8 @@ export interface ProviderSettings {
 }
 
 export interface Settings {
+  conversation: { mode: ConversationMode };
+  consultation: ConversationConfig;
   sales: { goal: string; product_info: string; instructions: string; opening: string };
   asr: ProviderSettings & { protocol: AudioProtocol; language: string };
   llm: ProviderSettings & { thinking: ThinkingMode | null; reasoning_effort: ReasoningEffort | null };
@@ -62,11 +72,14 @@ export interface CallRecord {
   channel?: 'browser' | 'telephone';
   provider?: TelephonyProviderName | null;
   destination?: string | null;
+  direction?: 'inbound' | 'outbound' | null;
+  caller?: string | null;
   state?: string;
 }
 
 export interface CallSummary extends Omit<CallRecord, 'settings' | 'transcript'> {
   goal: string;
+  conversation_mode?: ConversationMode;
   message_count: number;
 }
 
@@ -88,6 +101,8 @@ export function settingsUpdate(settings: Settings, secrets: SecretDrafts, phoneS
     return { ...publicValue, ...(secret === null ? { api_key: null } : secret ? { api_key: secret } : {}) };
   };
   return {
+    conversation: settings.conversation,
+    consultation: settings.consultation,
     sales: settings.sales,
     asr: provider(settings.asr, secrets.asr),
     llm: provider(settings.llm, secrets.llm),
@@ -110,7 +125,23 @@ export const phoneProviderLabels: Record<TelephonyProviderName, string> = {
   asterisk: 'Asterisk', freeswitch: 'FreeSWITCH', aliyun: '阿里云 AICCS', tencent: '腾讯云 TCCC',
 };
 
-export function callSource(call: Pick<CallRecord, 'channel' | 'provider' | 'destination'>): string {
+export function callSource(call: Pick<CallRecord, 'channel' | 'provider' | 'destination' | 'direction' | 'caller'>): string {
   if (call.channel !== 'telephone') return '浏览器语音';
-  return ['电话外呼', call.provider ? phoneProviderLabels[call.provider] ?? call.provider : '', call.destination ?? ''].filter(Boolean).join(' · ');
+  return [call.direction === 'inbound' ? '电话来电' : '电话外呼', call.provider ? phoneProviderLabels[call.provider] ?? call.provider : '', call.direction === 'inbound' ? call.caller ?? '' : call.destination ?? ''].filter(Boolean).join(' · ');
+}
+
+export function conversationMode(settings: Settings): ConversationMode {
+  return settings.conversation?.mode ?? 'sales';
+}
+
+export function activeConversation(settings: Settings): ConversationConfig {
+  return conversationMode(settings) === 'sales' ? settings.sales : settings.consultation;
+}
+
+export function conversationTitle(settings: Settings): string {
+  return conversationMode(settings) === 'sales' ? settings.sales.goal || '尚未配置目标' : '产品咨询';
+}
+
+export function conversationConfigured(settings: Settings): boolean {
+  return Boolean(activeConversation(settings).product_info.trim()) && (conversationMode(settings) !== 'sales' || Boolean(settings.sales.goal.trim()));
 }

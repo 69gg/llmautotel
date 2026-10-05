@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import type { Settings } from '../types';
+import { conversationConfigured, conversationMode, conversationTitle, type Settings } from '../types';
 import { VoiceCallController, type CallState, type VoiceSnapshot } from '../voiceCall';
 import { Icon } from './Icon';
 
@@ -15,8 +15,9 @@ export function CallPage({ settings, voice, controller, onConfigure }: { setting
   const transcriptEnd = useRef<HTMLDivElement>(null);
   const running = !['idle', 'ended'].includes(voice.state);
   const connected = !['idle', 'ended', 'connecting', 'ending'].includes(voice.state);
-  const hasConfig = [settings.sales.goal, settings.sales.product_info, settings.asr.base_url, settings.asr.model, settings.llm.base_url, settings.llm.model, settings.tts.base_url, settings.tts.model, settings.tts.voice].every(value => value.trim());
-  const goal = voice.call?.settings.sales.goal || settings.sales.goal;
+  const hasConfig = conversationConfigured(settings) && [ settings.asr.base_url, settings.asr.model, settings.llm.base_url, settings.llm.model, settings.tts.base_url, settings.tts.model, settings.tts.voice].every(value => value.trim());
+  const snapshot = voice.call?.settings ?? settings;
+  const goal = conversationTitle(snapshot);
   const level = voice.state === 'speaking' ? voice.remoteLevel : voice.muted ? 0 : voice.localLevel;
 
   useEffect(() => {
@@ -35,9 +36,9 @@ export function CallPage({ settings, voice, controller, onConfigure }: { setting
       {voice.audioBlocked && <div className="audio-prompt"><p>浏览器暂停了声音播放。</p><button className="text-button" onClick={() => void controller.resumeAudio()}>点击播放声音</button></div>}
       {voice.error && <p className="call-error" role="alert">{voice.error}</p>}
       {!running ? <button className="button primary start-call" disabled={!hasConfig} onClick={() => void controller.start()}><Icon name="phone" size={18} />{voice.state === 'ended' ? '再次通话' : '开始通话'}</button> : <div className="call-controls"><button className={`control-button ${voice.muted ? 'muted' : ''}`} disabled={!connected} onClick={controller.toggleMute} aria-label={voice.muted ? '取消麦克风静音' : '麦克风静音'} aria-pressed={voice.muted}><Icon name={voice.muted ? 'muted' : 'mic'} size={23} /><span>{voice.muted ? '取消静音' : '静音'}</span></button><button className="control-button end-call" disabled={voice.state === 'ending'} onClick={() => void controller.end()} aria-label="挂断通话"><Icon name="end" size={23} /><span>挂断</span></button></div>}
-      {!hasConfig && !running && <button className="text-button complete-config" onClick={onConfigure}>先完成目标与模型配置<Icon name="arrow" size={13} /></button>}
+      {!hasConfig && !running && <button className="text-button complete-config" onClick={onConfigure}>先完成资料与模型配置<Icon name="arrow" size={13} /></button>}
       <div className="level-monitor" aria-label="音量反馈"><span>{voice.state === 'speaking' ? 'AI 音量' : '麦克风'}</span><div className="level-track"><i style={{ width: `${level * 100}%` }} /></div><span>{Math.round(level * 100)}%</span></div>
     </section><aside className="conversation-panel" aria-label="对话文字"><div className="conversation-title"><h2>对话文字</h2><span>{voice.transcript.length ? `${voice.transcript.length} 条` : '实时记录'}</span></div><div className="conversation-scroll" aria-live="polite">{voice.transcript.length ? voice.transcript.map((entry, index) => <div className={`transcript-entry ${entry.role}`} key={`${entry.timestamp}-${index}`}><div className="transcript-meta"><span>{entry.role === 'assistant' ? 'AI 助手' : '你'}</span><time>{new Date(entry.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</time></div><p>{entry.text}</p>{entry.interrupted && <span className="interrupted-label">已打断 · 播放未完成</span>}</div>) : <div className="transcript-empty"><span className="transcript-lines"><i /><i /><i /></span><p>通话开始后，对话文字会显示在这里。</p></div>}<div ref={transcriptEnd} /></div><div className="conversation-note">完整播放的文字会保留，打断前的生成内容用于下一轮背景</div></aside></div>
-    <div className="call-goal"><span>本次目标</span><p>{goal || '尚未配置目标'}</p>{running && <small>使用通话开始时的配置</small>}</div>
+    <div className="call-goal"><span>{conversationMode(snapshot) === 'sales' ? '本次目标' : '本次模式'}</span><p>{goal}</p>{running && <small>使用通话开始时的配置</small>}</div>
   </div>;
 }

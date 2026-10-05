@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { RTVIEventCallbacks } from '@pipecat-ai/client-js';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
 import { api } from '../api';
 import { fixtureSettings } from './fixtures';
@@ -21,6 +21,11 @@ vi.mock('@pipecat-ai/client-js', () => ({
   },
 }));
 
+beforeEach(() => {
+  vi.spyOn(api, 'telephonyProviders').mockResolvedValue([]);
+  vi.spyOn(api, 'inboundProviders').mockResolvedValue([]);
+  vi.spyOn(api, 'activeCall').mockResolvedValue(null);
+});
 afterEach(() => vi.restoreAllMocks());
 
 describe('工作台导航', () => {
@@ -35,6 +40,7 @@ describe('工作台导航', () => {
     });
     const start = vi.spyOn(api, 'startCall');
     render(<App />);
+    await user.click(await screen.findByRole('button', { name: '语音通话' }));
     const button = await screen.findByRole('button', { name: '开始通话' });
     expect(button).toBeDisabled();
     expect(screen.getByText('完整播放的文字会保留，打断前的生成内容用于下一轮背景')).toBeInTheDocument();
@@ -58,6 +64,7 @@ describe('工作台导航', () => {
     vi.spyOn(api, 'endCall').mockResolvedValue({ ...record, ended_at: new Date().toISOString(), status: 'ended' });
     vi.spyOn(api, 'saveSettings').mockResolvedValue({ ...settings, sales: { ...settings.sales, goal: '新的目标' } });
     render(<App />);
+    await user.click(await screen.findByRole('button', { name: '语音通话' }));
     await user.click(await screen.findByRole('button', { name: '开始通话' }));
     await screen.findByText('倾听中');
     await user.click(screen.getAllByRole('button', { name: '对话配置' })[0]);
