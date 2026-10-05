@@ -9,9 +9,11 @@ import re
 import time
 from dataclasses import dataclass
 from typing import Any, Literal
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from llmautotel.models import AppSettings
 from llmautotel.telephony.cloud import AliyunCallClient, CloudProvider
 from llmautotel.telephony.settings import AliyunSettings, CloudSettings, TencentSettings
 
@@ -175,3 +177,67 @@ def cloud_gateway_call_id(provider: CloudProvider, body: dict[str, Any]) -> str 
     if isinstance(direct, str) and direct:
         ids.add(direct)
     return next(iter(ids)) if len(ids) == 1 else None
+
+
+def authenticated_gateway_probe(
+    settings: AppSettings,
+    provider: CloudProvider,
+    body: dict[str, Any],
+    authorization: str | None,
+) -> tuple[str, ...] | None:
+    """无通话时的纯协议探测；调用方必须先确认全局没有活动通话。"""
+    config = getattr(settings.telephony, provider)
+    if not config.enabled or not config.inbound_enabled or body.get("stream") is not True:
+        return None
+    expected = config.gateway_token.get_secret_value() if config.gateway_token else ""
+    if provider == "tencent":
+        expected = "Bearer " + expected if expected else ""
+    if (
+        not expected
+        or not authorization
+        or not hmac.compare_digest(authorization.encode(), expected.encode())
+    ):
+        return None
+    # 有空/错误标识仍是会话协议错误，不能降级成可用性探测。
+    binding_fields = {"call_id", "session_id", "SessionId", "out_id", "biz_params"}
+    if binding_fields.intersection(body) or body.get("tools"):
+        return None
+    messages = body.get("messages")
+    if not isinstance(messages, list) or not messages:
+        return None
+    for message in messages:
+        if (
+            not isinstance(message, dict)
+            or message.get("role") not in {"system", "user", "assistant"}
+            or not isinstance(message.get("content"), str)
+            or "llmautotel_call_id" in message["content"]
+        ):
+            return None
+    identity: dict[str, Any] = {
+        "id": "chatcmpl-" + str(uuid4()),
+        "object": "chat.completion.chunk",
+        "created": int(time.time()),
+        "model": settings.llm.model,
+    }
+    response = {
+        **identity,
+        "choices": [
+            {
+                "index": 0,
+                "delta": {
+                    "role": "assistant",
+                    "content": "模型网关连接正常；此回复仅验证协议，未调用模型或建立电话。",
+                },
+                "finish_reason": None,
+            }
+        ],
+    }
+    finished = {
+        **identity,
+        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+    }
+    return (
+        "data: " + json.dumps(response, ensure_ascii=False) + "\n\n",
+        "data: " + json.dumps(finished, ensure_ascii=False) + "\n\n",
+        "data: [DONE]\n\n",
+    )
