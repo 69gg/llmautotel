@@ -955,3 +955,38 @@ async def test_inbound_disconnect_reconnect_does_not_readmit_existing_id(
         await calls[0].close()
         await calls[1].close()
         await listener.close()
+
+
+async def test_delayed_inbound_listener_cleanup_failure_is_safe_and_closes_http(
+    pbx: FakePBX,
+) -> None:
+    calls: list[IncomingCall] = []
+
+    async def accept(call: IncomingCall) -> bool:
+        calls.append(call)
+        return True
+
+    async def error(message: str) -> None:
+        return
+
+    async def broken_close() -> None:
+        raise RuntimeError("test-secret-close-response")
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(pbx.request))
+    listener = AsteriskIncomingListener(
+        settings(inbound_enabled=True), IncomingCallbacks(accept, error), client=client
+    )
+    listener._control._owns_client = True
+    await listener.start()
+    pbx.events.event(inbound_event())
+    await eventually(lambda: len(calls) == 1)
+    await listener.close()
+    assert not client.is_closed
+    pbx.events.close = broken_close
+    await calls[0].close()
+    with pytest.raises(TelephonyError, match="连接清理失败") as exc:
+        await listener.close()
+    assert client.is_closed and not listener.connected
+    assert "test-secret" not in str(exc.value)
+    await asyncio.sleep(0)
+    assert listener.last_error == "Asterisk 来电监听连接清理失败。"

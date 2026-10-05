@@ -595,6 +595,7 @@ class AsteriskIncomingListener:
         )
         self._socket: ClientConnection | None = None
         self._worker: asyncio.Task[None] | None = None
+        self._stop_task: asyncio.Task[None] | None = None
         self._admissions: set[asyncio.Task[None]] = set()
         self._subscriptions: set[IncomingEvents] = set()
         self._seen: set[str] = set()
@@ -645,7 +646,17 @@ class AsteriskIncomingListener:
     def _release(self, subscription: IncomingEvents) -> None:
         self._subscriptions.discard(subscription)
         if self._closing and not self._subscriptions:
-            asyncio.create_task(self._stop())
+            self._schedule_stop()
+
+    def _schedule_stop(self) -> asyncio.Task[None]:
+        if self._stop_task is None:
+            self._stop_task = asyncio.create_task(self._stop())
+            self._stop_task.add_done_callback(self._stop_completed)
+        return self._stop_task
+
+    def _stop_completed(self, task: asyncio.Task[None]) -> None:
+        if not task.cancelled() and task.exception() is not None:
+            self.last_error = "Asterisk 来电监听连接清理失败。"
 
     async def _hangup(self, channel_id: str, reason: str) -> None:
         await self._control._request(
@@ -756,13 +767,23 @@ class AsteriskIncomingListener:
         if self._worker is not None and self._worker is not asyncio.current_task():
             self._worker.cancel()
             await asyncio.gather(self._worker, return_exceptions=True)
-        if self._socket is not None:
-            await self._socket.close()
-        await self._control.close()
+        failed = False
+        try:
+            if self._socket is not None:
+                await self._socket.close()
+        except Exception:
+            failed = True
+        finally:
+            try:
+                await self._control.close()
+            except Exception:
+                failed = True
+        if failed:
+            raise TelephonyError("Asterisk 来电监听连接清理失败。")
 
     async def close(self) -> None:
         self._closing = True
         await asyncio.gather(*tuple(self._admissions), return_exceptions=True)
         # 入呼驱动借用本连接；关闭接听入口后，已有单通完成时才关 WS。
         if not self._subscriptions:
-            await self._stop()
+            await asyncio.shield(self._schedule_stop())
