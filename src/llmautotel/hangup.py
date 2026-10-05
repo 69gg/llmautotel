@@ -23,6 +23,7 @@ from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.services.llm_service import FunctionCallParams
 
+from llmautotel.models import ConversationMode
 from llmautotel.speech import clean_speech_text
 
 HANGUP_POLICY = (
@@ -41,6 +42,18 @@ HANGUP_POLICY = (
     "工具会完整朗读 goodbye 后挂断，不要另外生成重复告别。\n"
     "用户意思不明确时继续回应问题、介绍相关价值并推进销售，不要问是否要挂断。"
     "价格抱怨、犹豫、沉默，都不能推断为明确拒绝目标行动或结束通话。"
+    "用户仍提出问题、要求继续或说不要挂断时不得调用工具。\n"
+)
+
+
+CONSULTATION_HANGUP_POLICY = (
+    "这是产品咨询，不进行销售挽留。用户拒绝购买、嫌贵、犹豫或说暂时不需要某项功能，"
+    "都不能据此推断咨询已结束；继续回答其问题，意思不明确时只澄清当前咨询内容。"
+    "不得询问是否要挂断，也不得调用销售挽留工具。\n"
+    "仅当最新用户发言明确要求结束通话，或明确表示咨询已结束、无需继续帮助时，"
+    "调用 hang_up，设置 intent=direct_exit、confirmed=true，evidence 完整引用最新用户原文。"
+    "goodbye 填带祝福的简短礼貌告别，例如‘好的，祝您生活愉快，再见。’。"
+    "工具会完整朗读 goodbye 后挂断，不要另外生成重复告别。"
     "用户仍提出问题、要求继续或说不要挂断时不得调用工具。\n"
 )
 
@@ -75,11 +88,14 @@ class HangupController(FrameProcessor):
         context: LLMContext,
         activity: ConversationActivity,
         on_hangup: Callable[[], Awaitable[None]],
+        *,
+        mode: ConversationMode = "sales",
     ) -> None:
         super().__init__()
         self._context = context
         self._activity = activity
         self._on_hangup = on_hangup
+        self._mode = mode
         self._pending: _ConfirmedUserTurn | None = None
         self._accepted: set[str] = set()
         self._retention: _ConfirmedUserTurn | None = None
@@ -88,71 +104,90 @@ class HangupController(FrameProcessor):
         retention_state = (
             "本通已使用一次挽留尝试，不能再挽留；根据最新发言回答问题，"
             "若新一轮仍明确拒绝目标行动则告别挂断。"
-            if self._retention is not None else
-            "本通尚未挽留；首次拒绝目标行动必须先调用 retain_once，不能直接挂断。"
+            if self._retention is not None
+            else "本通尚未挽留；首次拒绝目标行动必须先调用 retain_once，不能直接挂断。"
         )
-        return ToolsSchema(standard_tools=[FunctionSchema(
-            name="hang_up",
-            description=(
-                "最新发言直接要求结束，或已挽留一次后新一轮仍明确拒绝目标行动时，"
-                "完整播放带祝福的告别再挂断。"
-                "含糊、嫌贵、犹豫或仍有问题时继续销售对话，不能猜测或询问是否挂断。"
-                f"{retention_state}"
-            ),
-            properties={
-                "intent": {
-                    "type": "string", "enum": ["direct_exit", "purchase_refusal"],
-                    "description": (
-                        "direct_exit=直接要求结束；purchase_refusal=拒绝当前销售目标行动，"
-                        "可为购买、订阅或其他配置目标。"
-                    ),
+        description = (
+            "最新发言直接要求结束，或已挽留一次后新一轮仍明确拒绝目标行动时，"
+            "完整播放带祝福的告别再挂断。"
+            "含糊、嫌贵、犹豫或仍有问题时继续销售对话，不能猜测或询问是否挂断。"
+            f"{retention_state}"
+            if self._mode == "sales"
+            else "仅当最新发言明确要求结束，或明确表示咨询已结束、无需继续帮助时，"
+            "完整播放带祝福的告别再挂断。拒绝购买或功能不等于结束，"
+            "含糊、嫌贵、犹豫或仍有问题时继续回答咨询，不能猜测或询问是否挂断。"
+        )
+        tools = [
+            FunctionSchema(
+                name="hang_up",
+                description=description,
+                properties={
+                    "intent": {
+                        "type": "string",
+                        "enum": (
+                            ["direct_exit", "purchase_refusal"]
+                            if self._mode == "sales"
+                            else ["direct_exit"]
+                        ),
+                        "description": (
+                            "direct_exit=直接要求结束；purchase_refusal=拒绝当前销售目标行动，"
+                            "可为购买、订阅或其他配置目标。"
+                            if self._mode == "sales"
+                            else "direct_exit=明确要求结束通话或明确表示咨询已结束、无需继续帮助。"
+                        ),
+                    },
+                    "confirmed": {
+                        "type": "boolean",
+                        "enum": [True],
+                        "description": "最新用户意图明确，不能凭猜测确认。",
+                    },
+                    "evidence": {
+                        "type": "string",
+                        "description": (
+                            "完整引用最新用户原文；若有‘当前用户发言’标记，只引用标记下的用户文字。"
+                        ),
+                    },
+                    "goodbye": {
+                        "type": "string",
+                        "description": "完整的简短结束回复，须包含‘祝您生活愉快’或类似祝福后道别。",
+                    },
                 },
-                "confirmed": {
-                    "type": "boolean", "enum": [True],
-                    "description": "最新用户意图明确，不能凭猜测确认。",
+                required=["intent", "confirmed", "evidence", "goodbye"],
+                handler=self.handle,
+            )
+        ]
+        if self._mode == "consultation":
+            return ToolsSchema(standard_tools=tools)
+        tools.append(
+            FunctionSchema(
+                name="retain_once",
+                description=(
+                    "仅在首次明确拒绝目标行动时，播放一次简短温和的挽留，然后等待用户回应。"
+                    "直接要求结束通话、含糊犹豫、嫌贵或提出问题时不调用。"
+                    f"{retention_state}"
+                ),
+                properties={
+                    "evidence": {
+                        "type": "string",
+                        "description": (
+                            "完整引用当前明确拒绝目标行动的原文，不包含‘当前用户发言’管理标记。"
+                        ),
+                    },
+                    "reply": {
+                        "type": "string",
+                        "description": (
+                            "一次简短温和的挽留：介绍一项产品实际价值，"
+                            "结尾用‘考虑 + 配置目标行动 + 吗？’询问意向。"
+                            "不调查用途、场景或使用频率，不询问是否挂断。"
+                            "只询问意向，不承诺代办没有实际工具支持的操作。"
+                        ),
+                    },
                 },
-                "evidence": {
-                    "type": "string",
-                    "description": (
-                        "完整引用最新用户原文；若有‘当前用户发言’标记，"
-                        "只引用标记下的用户文字。"
-                    ),
-                },
-                "goodbye": {
-                    "type": "string",
-                    "description": "完整的简短结束回复，须包含‘祝您生活愉快’或类似祝福后道别。",
-                },
-            },
-            required=["intent", "confirmed", "evidence", "goodbye"],
-            handler=self.handle,
-        ), FunctionSchema(
-            name="retain_once",
-            description=(
-                "仅在首次明确拒绝目标行动时，播放一次简短温和的挽留，然后等待用户回应。"
-                "直接要求结束通话、含糊犹豫、嫌贵或提出问题时不调用。"
-                f"{retention_state}"
-            ),
-            properties={
-                "evidence": {
-                    "type": "string",
-                    "description": (
-                        "完整引用当前明确拒绝目标行动的原文，"
-                        "不包含‘当前用户发言’管理标记。"
-                    ),
-                },
-                "reply": {
-                    "type": "string",
-                    "description": (
-                        "一次简短温和的挽留：介绍一项产品实际价值，"
-                        "结尾用‘考虑 + 配置目标行动 + 吗？’询问意向。"
-                        "不调查用途、场景或使用频率，不询问是否挂断。"
-                        "只询问意向，不承诺代办没有实际工具支持的操作。"
-                    ),
-                },
-            },
-            required=["evidence", "reply"],
-            handler=self.retain,
-        )])
+                required=["evidence", "reply"],
+                handler=self.retain,
+            )
+        )
+        return ToolsSchema(standard_tools=tools)
 
     def _user_turn(self) -> int:
         return sum(message.get("role") == "user" for message in self._context.get_messages())
@@ -160,8 +195,10 @@ class HangupController(FrameProcessor):
     def _candidate(self, params: FunctionCallParams) -> _ConfirmedUserTurn:
         evidence = params.arguments.get("evidence")
         return _ConfirmedUserTurn(
-            params.tool_call_id, self._activity.request_generation,
-            evidence if isinstance(evidence, str) else "", self._user_turn(),
+            params.tool_call_id,
+            self._activity.request_generation,
+            evidence if isinstance(evidence, str) else "",
+            self._user_turn(),
         )
 
     def _latest_user_text(self) -> str | None:
@@ -181,21 +218,34 @@ class HangupController(FrameProcessor):
         )
 
     async def retain(self, params: FunctionCallParams) -> None:
+        if self._mode != "sales":
+            await params.result_callback(
+                {"accepted": False, "message": "咨询模式不挽留；请回答最新咨询内容。"},
+                properties=FunctionCallResultProperties(run_llm=True),
+            )
+            return
         candidate = self._candidate(params)
         reply = params.arguments.get("reply")
         reply = await clean_speech_text(reply) if isinstance(reply, str) else None
         valid = (
-            bool(candidate.evidence.strip()) and self._current(candidate)
-            and isinstance(reply, str) and bool(reply.strip())
+            bool(candidate.evidence.strip())
+            and self._current(candidate)
+            and isinstance(reply, str)
+            and bool(reply.strip())
         )
         pending_current = self._pending is not None and self._current(self._pending)
-        duplicate = params.tool_call_id in self._accepted or (
-            self._retention is not None and candidate.user_turn == self._retention.user_turn
-        ) or pending_current
+        duplicate = (
+            params.tool_call_id in self._accepted
+            or (self._retention is not None and candidate.user_turn == self._retention.user_turn)
+            or pending_current
+        )
         if not valid or self._retention is not None or pending_current:
             await params.result_callback(
-                {"accepted": False, "retention_used": self._retention is not None,
-                 "message": "本通最多挽留一次；已挽留后按最新发言回应，明确再次拒绝才告别挂断。"},
+                {
+                    "accepted": False,
+                    "retention_used": self._retention is not None,
+                    "message": "本通最多挽留一次；已挽留后按最新发言回应，明确再次拒绝才告别挂断。",
+                },
                 properties=FunctionCallResultProperties(run_llm=not duplicate),
             )
             return
@@ -204,8 +254,11 @@ class HangupController(FrameProcessor):
         self._accepted.add(params.tool_call_id)
         self._context.set_tools(self.tools())
         await params.result_callback(
-            {"accepted": True, "retention_used": True,
-             "status": "播放唯一一次挽留，然后等待用户；被打断也不能再次挽留。"},
+            {
+                "accepted": True,
+                "retention_used": True,
+                "status": "播放唯一一次挽留，然后等待用户；被打断也不能再次挽留。",
+            },
             properties=FunctionCallResultProperties(run_llm=False),
         )
         await params.llm.push_frame(TTSSpeakFrame(text=reply.strip(), append_to_context=True))
@@ -219,15 +272,19 @@ class HangupController(FrameProcessor):
         candidate = self._candidate(params)
         intent = params.arguments.get("intent")
         purchase_refusal_allowed = (
-            self._retention is not None and candidate.user_turn > self._retention.user_turn
+            self._mode == "sales"
+            and self._retention is not None
+            and candidate.user_turn > self._retention.user_turn
         )
         valid = (
             params.arguments.get("confirmed") is True
-            and (intent == "direct_exit" or (
-                intent == "purchase_refusal" and purchase_refusal_allowed
-            ))
+            and (
+                intent == "direct_exit"
+                or (intent == "purchase_refusal" and purchase_refusal_allowed)
+            )
             and bool(candidate.evidence.strip())
-            and isinstance(goodbye, str) and bool(goodbye.strip())
+            and isinstance(goodbye, str)
+            and bool(goodbye.strip())
             and self._current(candidate)
         )
         duplicate = params.tool_call_id in self._accepted or (
@@ -238,13 +295,18 @@ class HangupController(FrameProcessor):
                 self._retention is not None and candidate.user_turn == self._retention.user_turn
             )
             await params.result_callback(
-                {"accepted": False, "retention_used": self._retention is not None,
-                 "message": (
-                     "首次拒绝目标行动先调用 retain_once 挽留一次，不得挂断；"
-                     "挽留后等待用户新一轮回应，再次明确拒绝才告别。"
-                     if intent == "purchase_refusal" and not purchase_refusal_allowed else
-                     "未确认当前用户明确结束，或挂断已在处理。"
-                 )},
+                {
+                    "accepted": False,
+                    "retention_used": self._retention is not None,
+                    "message": (
+                        "首次拒绝目标行动先调用 retain_once 挽留一次，不得挂断；"
+                        "挽留后等待用户新一轮回应，再次明确拒绝才告别。"
+                        if self._mode == "sales"
+                        and intent == "purchase_refusal"
+                        and not purchase_refusal_allowed
+                        else "未确认当前用户明确结束，或挂断已在处理。"
+                    ),
+                },
                 properties=FunctionCallResultProperties(
                     run_llm=not duplicate and not same_retention_turn,
                 ),
@@ -258,9 +320,12 @@ class HangupController(FrameProcessor):
         )
         # 普通 DataFrame 经过官方 TTS 串行队列和音频输出队列，不能越过告别音频。
         await params.llm.push_frame(TTSSpeakFrame(text=goodbye.strip(), append_to_context=True))
-        await params.llm.push_frame(HangupAfterPlaybackFrame(
-            tool_call_id=candidate.tool_call_id, generation=candidate.generation,
-        ))
+        await params.llm.push_frame(
+            HangupAfterPlaybackFrame(
+                tool_call_id=candidate.tool_call_id,
+                generation=candidate.generation,
+            )
+        )
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
@@ -275,8 +340,10 @@ class HangupController(FrameProcessor):
             elif isinstance(frame, HangupAfterPlaybackFrame):
                 pending = self._pending
                 if (
-                    pending is not None and frame.tool_call_id == pending.tool_call_id
-                    and frame.generation == pending.generation and self._current(pending)
+                    pending is not None
+                    and frame.tool_call_id == pending.tool_call_id
+                    and frame.generation == pending.generation
+                    and self._current(pending)
                 ):
                     self._pending = None
                     await self._on_hangup()

@@ -32,7 +32,7 @@ from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
 
 import llmautotel.voice as voice_module
 from llmautotel.conversation import INTERRUPTED_BACKGROUND_LABEL
-from llmautotel.models import AppSettings, TranscriptEntry, TTSSettings
+from llmautotel.models import AppSettings, ConversationMode, TranscriptEntry, TTSSettings
 from llmautotel.providers import CompatibleTTSService
 from llmautotel.voice import TranscriptRole, VoiceCallbacks, VoiceSession
 
@@ -243,6 +243,7 @@ async def start_session(
     tts_block_first: Literal["before_audio", "during_audio"] | None = None,
     opening: str = "",
     asr_timeout: float = 30.0,
+    conversation_mode: ConversationMode = "sales",
 ) -> RunningSession:
     recorder = Recorder()
     transport = LocalTransport(recorder)
@@ -254,9 +255,11 @@ async def start_session(
     monkeypatch.setattr(voice_module, "create_services", lambda settings: services)
     monkeypatch.setattr(voice_module, "SmallWebRTCTransport", lambda **kwargs: transport)
     settings = AppSettings()
+    settings.conversation.mode = conversation_mode
     settings.sales.goal = "让用户订阅测试计划"
     settings.sales.product_info = "测试计划价格每月 10 元"
-    settings.sales.opening = opening
+    settings.consultation.product_info = "咨询产品支持导出 PDF。"
+    settings.active_conversation.opening = opening
     settings.asr.timeout_seconds = asr_timeout
     session = VoiceSession(cast(SmallWebRTCConnection, object()), settings, recorder.callbacks())
     task = asyncio.create_task(session.run())
@@ -293,7 +296,8 @@ async def test_ready_generates_opening_once_and_persists_before_web_event(
         assert running.recorder.messages[0].text == "新的回答。"
         await asyncio.wait_for(running.transport.outgoing.transcript_sent.wait(), timeout=3)
         assert running.recorder.ordering[:2] == [
-            "persist:assistant:新的回答。", "send:assistant:新的回答。"
+            "persist:assistant:新的回答。",
+            "send:assistant:新的回答。",
         ]
     finally:
         await running.close()
@@ -367,7 +371,8 @@ async def test_interrupt_keeps_completed_sentence_and_labels_unfinished_backgrou
         new_context = running.services.llm.inputs[1]
         assert {"role": "assistant", "content": "第一句。"} in new_context
         background = [
-            message["content"] for message in new_context
+            message["content"]
+            for message in new_context
             if str(message.get("content", "")).startswith(INTERRUPTED_BACKGROUND_LABEL)
         ]
         assert len(background) == 1
@@ -416,9 +421,7 @@ async def test_empty_final_transcript_returns_to_listening_without_new_llm(
         await running.frame(TranscriptionFrame("我想了解价格。", "user", "now", finalized=True))
         await wait_messages(running.recorder, 3)
         assert len(running.services.llm.inputs) == 2
-        assert running.services.llm.inputs[-1][-1] == {
-            "role": "user", "content": "我想了解价格。"
-        }
+        assert running.services.llm.inputs[-1][-1] == {"role": "user", "content": "我想了解价格。"}
         assert running.recorder.messages[-1].text == "新的回答。"
     finally:
         await running.close()
@@ -491,9 +494,7 @@ async def test_previous_final_cannot_finish_resumed_speech(
         await running.frame(VADUserStoppedSpeakingFrame(stop_secs=0.6))
         await asyncio.sleep(0.1)
         assert running.services.llm.inputs == []
-        await running.frame(
-            TranscriptionFrame("还有使用限制。", "user", "second", finalized=True)
-        )
+        await running.frame(TranscriptionFrame("还有使用限制。", "user", "second", finalized=True))
         await wait_messages(running.recorder, 2)
         assert len(running.services.llm.inputs) == 1
         assert "我想了解价格。" in running.recorder.messages[0].text
@@ -513,14 +514,10 @@ async def test_segmented_asr_watchdog_fails_without_reply_to_incomplete_turn(
         await running.frame(VADUserStartedSpeakingFrame())
         await running.frame(VADUserStoppedSpeakingFrame(stop_secs=0.6))
         # 第二段一直没有 final；第一段有有效内容，可检测 watchdog 是否误触发 LLM。
-        await running.frame(
-            TranscriptionFrame("我想了解价格。", "user", "first", finalized=True)
-        )
+        await running.frame(TranscriptionFrame("我想了解价格。", "user", "first", finalized=True))
         assert await asyncio.wait_for(running.task, timeout=3) == "model_error"
         assert running.services.closed
-        assert running.recorder.errors == [
-            "语音识别等待超时，请检查识别服务和超时设置后重试。"
-        ]
+        assert running.recorder.errors == ["语音识别等待超时，请检查识别服务和超时设置后重试。"]
         assert running.services.llm.inputs == []
         assert running.services.tts.requests == []
     finally:
@@ -538,9 +535,7 @@ async def test_hangup_discards_pending_user_turn_without_new_model_request(
         await running.frame(VADUserStoppedSpeakingFrame(stop_secs=0.6))
         await running.frame(VADUserStartedSpeakingFrame())
         await running.frame(VADUserStoppedSpeakingFrame(stop_secs=0.6))
-        await running.frame(
-            TranscriptionFrame("我想了解价格。", "user", "first", finalized=True)
-        )
+        await running.frame(TranscriptionFrame("我想了解价格。", "user", "first", finalized=True))
         user = running.session._user_aggregator
         assert user is not None
         async with asyncio.timeout(3):
@@ -599,7 +594,8 @@ async def test_interrupt_fixed_opening_before_complete_sentence_never_resumes(
         assert len(running.services.llm.inputs) == 1
         next_context = running.services.llm.inputs[0]
         assert next_context[-2] == {
-            "role": "system", "content": f"{INTERRUPTED_BACKGROUND_LABEL}\n{opening}"
+            "role": "system",
+            "content": f"{INTERRUPTED_BACKGROUND_LABEL}\n{opening}",
         }
         assert next_context[-1] == {"role": "user", "content": "先说价格。"}
         assert running.services.tts.requests == [opening, "新的回答。"]

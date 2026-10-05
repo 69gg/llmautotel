@@ -55,7 +55,9 @@ class RetentionTTS(GoodbyeTTS):
             self.requests.append(text)
             yield TTSAudioRawFrame(
                 audio=(2).to_bytes(2, "little") * 14400,
-                sample_rate=24000, num_channels=1, context_id=context_id,
+                sample_rate=24000,
+                num_channels=1,
+                context_id=context_id,
             )
             self.generated.set()
             return
@@ -64,8 +66,12 @@ class RetentionTTS(GoodbyeTTS):
 
 
 def refusal_hangup(evidence: str = REFUSAL) -> dict[str, Any]:
-    return {"intent": "purchase_refusal", "confirmed": True,
-            "evidence": evidence, "goodbye": GOODBYE}
+    return {
+        "intent": "purchase_refusal",
+        "confirmed": True,
+        "evidence": evidence,
+        "goodbye": GOODBYE,
+    }
 
 
 async def running_retention(
@@ -80,7 +86,8 @@ async def running_retention(
         requests.append(json.loads(await request.aread()))
         assert len(requests) <= len(replies), "出现未计划的额外模型请求"
         return httpx2.Response(
-            200, headers={"content-type": "text/event-stream"},
+            200,
+            headers={"content-type": "text/event-stream"},
             content=replies[len(requests) - 1],
         )
 
@@ -94,6 +101,7 @@ async def running_retention(
     monkeypatch.setattr(voice_module, "create_services", lambda settings: services)
     monkeypatch.setattr(voice_module, "SmallWebRTCTransport", lambda **kwargs: transport)
     settings = AppSettings()
+    settings.conversation.mode = "sales"
     settings.sales.goal = "订阅测试产品"
     settings.sales.product_info = "测试产品可以整理资料。"
     session = VoiceSession(cast(SmallWebRTCConnection, object()), settings, recorder.callbacks())
@@ -112,12 +120,18 @@ async def wait_retention(recorder: Recorder) -> None:
 async def test_first_refusal_recovers_from_premature_hangup_then_second_refusal_ends(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    running = await running_retention(monkeypatch, [
-        tool_response(refusal_hangup(), tool_id="premature"),
-        tool_response({"evidence": REFUSAL, "reply": RETAIN},
-                      tool_id="retention", function_name="retain_once"),
-        tool_response(refusal_hangup(), tool_id="confirmed-second"),
-    ])
+    running = await running_retention(
+        monkeypatch,
+        [
+            tool_response(refusal_hangup(), tool_id="premature"),
+            tool_response(
+                {"evidence": REFUSAL, "reply": RETAIN},
+                tool_id="retention",
+                function_name="retain_once",
+            ),
+            tool_response(refusal_hangup(), tool_id="confirmed-second"),
+        ],
+    )
     try:
         await running.user(REFUSAL)
         await wait_retention(running.recorder)
@@ -135,7 +149,10 @@ async def test_first_refusal_recovers_from_premature_hangup_then_second_refusal_
         assert running.services.tts.requests == [RETAIN, GOODBYE]
         assert running.transport.outgoing.played.count(1) == 15
         assert [message.text for message in running.recorder.messages] == [
-            REFUSAL, RETAIN, REFUSAL, GOODBYE,
+            REFUSAL,
+            RETAIN,
+            REFUSAL,
+            GOODBYE,
         ]
         schema = running.requests[2]["tools"]
         assert all("已使用一次挽留" in tool["function"]["description"] for tool in schema)
@@ -147,12 +164,18 @@ async def test_first_refusal_recovers_from_premature_hangup_then_second_refusal_
 async def test_retention_keeps_conversation_open_for_new_question_before_later_refusal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    running = await running_retention(monkeypatch, [
-        tool_response({"evidence": REFUSAL, "reply": RETAIN},
-                      tool_id="retention", function_name="retain_once"),
-        sse_text(NEW_ANSWER) + b"data: [DONE]\n\n",
-        tool_response(refusal_hangup(), tool_id="confirmed-second"),
-    ])
+    running = await running_retention(
+        monkeypatch,
+        [
+            tool_response(
+                {"evidence": REFUSAL, "reply": RETAIN},
+                tool_id="retention",
+                function_name="retain_once",
+            ),
+            sse_text(NEW_ANSWER) + b"data: [DONE]\n\n",
+            tool_response(refusal_hangup(), tool_id="confirmed-second"),
+        ],
+    )
     try:
         await running.user(REFUSAL)
         await wait_retention(running.recorder)
@@ -171,16 +194,27 @@ async def test_retention_keeps_conversation_open_for_new_question_before_later_r
 
 @pytest.mark.parametrize("stage", ["request", "playback"])
 async def test_interrupted_retention_is_not_replayed_even_if_model_calls_tool_again(
-    monkeypatch: pytest.MonkeyPatch, stage: Literal["request", "playback"],
+    monkeypatch: pytest.MonkeyPatch,
+    stage: Literal["request", "playback"],
 ) -> None:
-    running = await running_retention(monkeypatch, [
-        tool_response({"evidence": REFUSAL, "reply": RETAIN},
-                      tool_id="retention", function_name="retain_once"),
-        tool_response({"evidence": FOLLOW_UP, "reply": RETAIN},
-                      tool_id="illegal-repeat", function_name="retain_once"),
-        sse_text(NEW_ANSWER) + b"data: [DONE]\n\n",
-        tool_response(refusal_hangup(), tool_id="confirmed-second"),
-    ], mode=stage)
+    running = await running_retention(
+        monkeypatch,
+        [
+            tool_response(
+                {"evidence": REFUSAL, "reply": RETAIN},
+                tool_id="retention",
+                function_name="retain_once",
+            ),
+            tool_response(
+                {"evidence": FOLLOW_UP, "reply": RETAIN},
+                tool_id="illegal-repeat",
+                function_name="retain_once",
+            ),
+            sse_text(NEW_ANSWER) + b"data: [DONE]\n\n",
+            tool_response(refusal_hangup(), tool_id="confirmed-second"),
+        ],
+        mode=stage,
+    )
     tts = cast(RetentionTTS, running.services.tts)
     try:
         await running.user(REFUSAL)
@@ -233,7 +267,8 @@ async def test_same_user_turn_cannot_spend_retention_then_claim_second_refusal(
 
 @pytest.mark.parametrize("frame_type", [InterruptionFrame, VADUserStartedSpeakingFrame])
 async def test_interruptions_do_not_reset_once_budget_and_new_call_starts_fresh(
-    monkeypatch: pytest.MonkeyPatch, frame_type: type[Frame],
+    monkeypatch: pytest.MonkeyPatch,
+    frame_type: type[Frame],
 ) -> None:
     controller, activity, context, params, _ = controller_fixture(monkeypatch)
     context.set_messages([{"role": "user", "content": REFUSAL}])
@@ -258,14 +293,18 @@ async def test_interruptions_do_not_reset_once_budget_and_new_call_starts_fresh(
     assert cast(AsyncMock, fresh_params.llm.push_frame).await_count == 2
 
 
-@pytest.mark.parametrize("arguments", [
-    {"evidence": "旧原话", "reply": RETAIN},
-    {"evidence": REFUSAL, "reply": ""},
-    {"evidence": REFUSAL, "reply": None},
-    {"evidence": "", "reply": RETAIN},
-])
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"evidence": "旧原话", "reply": RETAIN},
+        {"evidence": REFUSAL, "reply": ""},
+        {"evidence": REFUSAL, "reply": None},
+        {"evidence": "", "reply": RETAIN},
+    ],
+)
 async def test_invalid_retention_does_not_consume_budget(
-    monkeypatch: pytest.MonkeyPatch, arguments: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    arguments: dict[str, Any],
 ) -> None:
     controller, _, context, params, _ = controller_fixture(monkeypatch)
     context.set_messages([{"role": "user", "content": REFUSAL}])
@@ -287,8 +326,12 @@ async def test_direct_exit_after_retention_still_uses_farewell_playback_marker(
     direct_exit = "别再打扰，请结束通话。"
     context.add_message({"role": "user", "content": direct_exit})
     params.tool_call_id = "direct-exit"
-    params.arguments = {"intent": "direct_exit", "confirmed": True,
-                        "evidence": direct_exit, "goodbye": GOODBYE}
+    params.arguments = {
+        "intent": "direct_exit",
+        "confirmed": True,
+        "evidence": direct_exit,
+        "goodbye": GOODBYE,
+    }
     await controller.handle(params)
     frames = [call.args[0] for call in cast(AsyncMock, params.llm.push_frame).await_args_list]
     assert [frame.text for frame in frames if isinstance(frame, TTSSpeakFrame)] == [RETAIN, GOODBYE]
@@ -300,12 +343,17 @@ async def test_direct_exit_after_retention_still_uses_farewell_playback_marker(
 
 @pytest.mark.parametrize("intent", [None, "uncertain", "purchase_refusal"])
 async def test_missing_unknown_or_unretained_purchase_intent_cannot_hang_up(
-    monkeypatch: pytest.MonkeyPatch, intent: str | None,
+    monkeypatch: pytest.MonkeyPatch,
+    intent: str | None,
 ) -> None:
     controller, _, context, params, on_hangup = controller_fixture(monkeypatch)
     context.set_messages([{"role": "user", "content": REFUSAL}])
-    params.arguments = {"confirmed": True, "evidence": REFUSAL,
-                        "goodbye": GOODBYE, "intent": intent}
+    params.arguments = {
+        "confirmed": True,
+        "evidence": REFUSAL,
+        "goodbye": GOODBYE,
+        "intent": intent,
+    }
     await controller.handle(params)
     cast(AsyncMock, params.llm.push_frame).assert_not_awaited()
     on_hangup.assert_not_awaited()
@@ -313,7 +361,8 @@ async def test_missing_unknown_or_unretained_purchase_intent_cannot_hang_up(
 
 @pytest.mark.parametrize("changed", ["speaking", "new-generation"])
 async def test_outdated_retention_cannot_consume_the_new_user_turn_budget(
-    monkeypatch: pytest.MonkeyPatch, changed: str,
+    monkeypatch: pytest.MonkeyPatch,
+    changed: str,
 ) -> None:
     controller, activity, context, params, _ = controller_fixture(monkeypatch)
     context.set_messages([{"role": "user", "content": REFUSAL}])
@@ -332,7 +381,8 @@ async def test_outdated_retention_cannot_consume_the_new_user_turn_budget(
 
 @pytest.mark.parametrize("same_id", [True, False])
 async def test_duplicate_retention_calls_play_exactly_one_reply(
-    monkeypatch: pytest.MonkeyPatch, same_id: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    same_id: bool,
 ) -> None:
     controller, _, context, params, _ = controller_fixture(monkeypatch)
     context.set_messages([{"role": "user", "content": REFUSAL}])

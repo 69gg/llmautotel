@@ -38,7 +38,7 @@ from test_voice import LocalTransport, Passthrough, Recorder
 import llmautotel.voice as voice_module
 from llmautotel.conversation import INTERRUPTED_BACKGROUND_LABEL
 from llmautotel.hangup import HangupAfterPlaybackFrame, HangupController
-from llmautotel.models import AppSettings, LLMSettings, TTSSettings
+from llmautotel.models import AppSettings, ConversationMode, LLMSettings, TTSSettings
 from llmautotel.providers import CompatibleLLMService, CompatibleTTSService
 from llmautotel.sessions import SessionManager, VoiceRuntime
 from llmautotel.store import Store
@@ -51,7 +51,10 @@ NEW_ANSWER = "它可以回答问题和整理文字。"
 
 
 def tool_response(
-    arguments: dict[str, Any], *, tool_id: str = "hangup-1", function_name: str = "hang_up",
+    arguments: dict[str, Any],
+    *,
+    tool_id: str = "hangup-1",
+    function_name: str = "hang_up",
 ) -> bytes:
     """通过实际 SDK 的 SSE 解析进入 Pipecat 工具执行器。"""
     chunk = {
@@ -59,19 +62,25 @@ def tool_response(
         "object": "chat.completion.chunk",
         "created": 0,
         "model": "controlled-llm",
-        "choices": [{
-            "index": 0,
-            "delta": {"tool_calls": [{
+        "choices": [
+            {
                 "index": 0,
-                "id": tool_id,
-                "type": "function",
-                "function": {
-                    "name": function_name,
-                    "arguments": json.dumps(arguments, ensure_ascii=False),
+                "delta": {
+                    "tool_calls": [
+                        {
+                            "index": 0,
+                            "id": tool_id,
+                            "type": "function",
+                            "function": {
+                                "name": function_name,
+                                "arguments": json.dumps(arguments, ensure_ascii=False),
+                            },
+                        }
+                    ]
                 },
-            }]},
-            "finish_reason": "tool_calls",
-        }],
+                "finish_reason": "tool_calls",
+            }
+        ],
     }
     return f"data: {json.dumps(chunk, ensure_ascii=False)}\n\ndata: [DONE]\n\n".encode()
 
@@ -84,9 +93,14 @@ class DelayedToolSSE(httpx2.AsyncByteStream):
         self.closed = False
 
     async def __aiter__(self) -> AsyncIterator[bytes]:
-        yield tool_response({
-            "intent": "direct_exit", "confirmed": True, "evidence": USER_END, "goodbye": GOODBYE,
-        }).removesuffix(b"data: [DONE]\n\n")
+        yield tool_response(
+            {
+                "intent": "direct_exit",
+                "confirmed": True,
+                "evidence": USER_END,
+                "goodbye": GOODBYE,
+            }
+        ).removesuffix(b"data: [DONE]\n\n")
         self.waiting.set()
         try:
             await self.release.wait()
@@ -164,6 +178,7 @@ async def running_hangup(
     mode: Literal["complete", "request"] = "complete",
     arguments: dict[str, Any] | None = None,
     delayed_tool: DelayedToolSSE | None = None,
+    conversation_mode: ConversationMode = "sales",
 ) -> RunningHangup:
     requests: list[dict[str, Any]] = []
 
@@ -174,16 +189,19 @@ async def running_hangup(
                 200, headers={"content-type": "text/event-stream"}, stream=delayed_tool
             )
         content = (
-            tool_response(arguments or {
-                "intent": "direct_exit", "confirmed": True,
-                "evidence": USER_END, "goodbye": GOODBYE,
-            })
+            tool_response(
+                arguments
+                or {
+                    "intent": "direct_exit",
+                    "confirmed": True,
+                    "evidence": USER_END,
+                    "goodbye": GOODBYE,
+                }
+            )
             if len(requests) == 1
             else sse_text(NEW_ANSWER) + b"data: [DONE]\n\n"
         )
-        return httpx2.Response(
-            200, headers={"content-type": "text/event-stream"}, content=content
-        )
+        return httpx2.Response(200, headers={"content-type": "text/event-stream"}, content=content)
 
     recorder = Recorder()
     transport = LocalTransport(recorder)
@@ -195,8 +213,10 @@ async def running_hangup(
     monkeypatch.setattr(voice_module, "create_services", lambda settings: services)
     monkeypatch.setattr(voice_module, "SmallWebRTCTransport", lambda **kwargs: transport)
     settings = AppSettings()
+    settings.conversation.mode = conversation_mode
     settings.sales.goal = "订阅测试产品"
     settings.sales.product_info = "测试产品可以回答问题。"
+    settings.consultation.product_info = "咨询产品支持导出 PDF。"
     session = VoiceSession(cast(SmallWebRTCConnection, object()), settings, recorder.callbacks())
     task = asyncio.create_task(session.run())
     await asyncio.wait_for(transport.outgoing.started.wait(), timeout=3)
@@ -207,8 +227,10 @@ async def running_hangup(
 async def wait_new_answer(recorder: Recorder) -> None:
     """等待可观察的新回答，工具无正文时不虚构额外的助手文字行。"""
     async with asyncio.timeout(3):
-        while not any(message.role == "assistant" and message.text == NEW_ANSWER
-                      for message in recorder.messages):
+        while not any(
+            message.role == "assistant" and message.text == NEW_ANSWER
+            for message in recorder.messages
+        ):
             recorder.changed.clear()
             await recorder.changed.wait()
 
@@ -298,16 +320,24 @@ async def test_user_interrupts_pending_goodbye_and_continues_new_question(
         next_context = running.requests[1]["messages"]
         assert next_context[-1]["role"] == "user"
         assert next_context[-1]["content"].endswith(FOLLOW_UP)
-        assistant_texts = [message["content"] for message in next_context
-                           if message["role"] == "assistant"
-                           and isinstance(message.get("content"), str)]
-        assert any(message["role"] == "system"
-                   and str(message.get("content", "")).startswith(INTERRUPTED_BACKGROUND_LABEL)
-                   and GOODBYE in message["content"] for message in next_context)
+        assistant_texts = [
+            message["content"]
+            for message in next_context
+            if message["role"] == "assistant" and isinstance(message.get("content"), str)
+        ]
+        assert any(
+            message["role"] == "system"
+            and str(message.get("content", "")).startswith(INTERRUPTED_BACKGROUND_LABEL)
+            and GOODBYE in message["content"]
+            for message in next_context
+        )
         assert all(GOODBYE not in text for text in assistant_texts)
         assert running.recorder.messages[-1].text == NEW_ANSWER
-        assert all(message.interrupted for message in running.recorder.messages
-                   if message.role == "assistant" and message.text != NEW_ANSWER)
+        assert all(
+            message.interrupted
+            for message in running.recorder.messages
+            if message.role == "assistant" and message.text != NEW_ANSWER
+        )
         await asyncio.sleep(0.08)
         assert running.transport.outgoing.played.count(1) <= previous_audio + 1
         assert not running.task.done()
@@ -318,19 +348,27 @@ async def test_user_interrupts_pending_goodbye_and_continues_new_question(
 
 def controller_fixture(
     monkeypatch: pytest.MonkeyPatch,
+    *,
+    mode: ConversationMode = "sales",
 ) -> tuple[HangupController, SimpleNamespace, LLMContext, FunctionCallParams, AsyncMock]:
     """边界测试只隔离框架启动；实际队列与音频顺序由上述管线验证。"""
     context = LLMContext([{"role": "user", "content": USER_END}])
     activity = SimpleNamespace(generation=0, request_generation=0, user_speaking=False)
     on_hangup = AsyncMock()
-    controller = HangupController(context=context, activity=activity, on_hangup=on_hangup)
+    controller = HangupController(
+        context=context, activity=activity, on_hangup=on_hangup, mode=mode
+    )
     monkeypatch.setattr(FrameProcessor, "process_frame", AsyncMock())
     monkeypatch.setattr(controller, "push_frame", AsyncMock())
     params = FunctionCallParams(
         function_name="hang_up",
         tool_call_id="hangup-unit",
-        arguments={"intent": "direct_exit", "confirmed": True,
-                   "evidence": USER_END, "goodbye": GOODBYE},
+        arguments={
+            "intent": "direct_exit",
+            "confirmed": True,
+            "evidence": USER_END,
+            "goodbye": GOODBYE,
+        },
         llm=cast(Any, SimpleNamespace(push_frame=AsyncMock())),
         pipeline_worker=cast(PipelineWorker, object()),
         context=context,
@@ -346,16 +384,28 @@ def controller_fixture(
         {"intent": "direct_exit", "confirmed": "true", "evidence": USER_END, "goodbye": GOODBYE},
         {"intent": "direct_exit", "evidence": USER_END, "goodbye": GOODBYE},
         {"intent": "direct_exit", "confirmed": True, "evidence": "", "goodbye": GOODBYE},
-        {"intent": "direct_exit", "confirmed": True,
-         "evidence": "用户之前说过再见。", "goodbye": GOODBYE},
+        {
+            "intent": "direct_exit",
+            "confirmed": True,
+            "evidence": "用户之前说过再见。",
+            "goodbye": GOODBYE,
+        },
         {"intent": "direct_exit", "confirmed": True, "evidence": USER_END, "goodbye": ""},
         {"intent": "direct_exit", "confirmed": True, "evidence": USER_END, "goodbye": None},
     ],
-    ids=["not-confirmed", "string-confirmed", "missing-confirmation", "empty-evidence",
-         "stale-evidence", "empty-goodbye", "invalid-goodbye"],
+    ids=[
+        "not-confirmed",
+        "string-confirmed",
+        "missing-confirmation",
+        "empty-evidence",
+        "stale-evidence",
+        "empty-goodbye",
+        "invalid-goodbye",
+    ],
 )
 async def test_invalid_tool_arguments_do_not_play_goodbye_or_hang_up(
-    monkeypatch: pytest.MonkeyPatch, arguments: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    arguments: dict[str, Any],
 ) -> None:
     controller, _, _, params, on_hangup = controller_fixture(monkeypatch)
     params.arguments = arguments
@@ -366,7 +416,8 @@ async def test_invalid_tool_arguments_do_not_play_goodbye_or_hang_up(
 
 @pytest.mark.parametrize("changed", ["speaking", "request-generation"])
 async def test_old_tool_cannot_run_while_user_speaks_or_new_asr_is_pending(
-    monkeypatch: pytest.MonkeyPatch, changed: str,
+    monkeypatch: pytest.MonkeyPatch,
+    changed: str,
 ) -> None:
     controller, activity, _, params, on_hangup = controller_fixture(monkeypatch)
     if changed == "speaking":
@@ -399,7 +450,8 @@ async def test_duplicate_tool_and_marker_do_not_repeat_goodbye_or_hangup(
 
 @pytest.mark.parametrize("late_frame", [VADUserStartedSpeakingFrame, InterruptionFrame])
 async def test_late_start_frame_from_same_user_turn_keeps_confirmed_hangup(
-    monkeypatch: pytest.MonkeyPatch, late_frame: type[Frame],
+    monkeypatch: pytest.MonkeyPatch,
+    late_frame: type[Frame],
 ) -> None:
     controller, activity, _, params, on_hangup = controller_fixture(monkeypatch)
     activity.generation = activity.request_generation = 1
@@ -417,7 +469,9 @@ async def test_late_start_frame_from_same_user_turn_keeps_confirmed_hangup(
 @pytest.mark.parametrize("late_frame", [VADUserStartedSpeakingFrame, InterruptionFrame])
 @pytest.mark.parametrize("changed", ["generation", "speaking"])
 async def test_new_user_activity_still_cancels_hangup_on_start_frame(
-    monkeypatch: pytest.MonkeyPatch, late_frame: type[Frame], changed: str,
+    monkeypatch: pytest.MonkeyPatch,
+    late_frame: type[Frame],
+    changed: str,
 ) -> None:
     controller, activity, _, params, on_hangup = controller_fixture(monkeypatch)
     await controller.handle(params)
@@ -436,7 +490,8 @@ async def test_new_user_activity_still_cancels_hangup_on_start_frame(
 
 @pytest.mark.parametrize("changed", ["generation", "speaking", "latest-evidence", "marker"])
 async def test_stale_playback_marker_does_not_end_current_conversation(
-    monkeypatch: pytest.MonkeyPatch, changed: str,
+    monkeypatch: pytest.MonkeyPatch,
+    changed: str,
 ) -> None:
     controller, activity, context, params, on_hangup = controller_fixture(monkeypatch)
     await controller.handle(params)

@@ -40,12 +40,25 @@ from pipecat.turns.user_turn_strategies import UserTurnStrategies
 from pipecat.workers.runner import WorkerRunner
 
 from llmautotel.conversation import InterruptedResponseContext
-from llmautotel.hangup import HANGUP_POLICY, HangupController
+from llmautotel.hangup import CONSULTATION_HANGUP_POLICY, HANGUP_POLICY, HangupController
 from llmautotel.models import AppSettings
 from llmautotel.providers import ProviderServices, create_services
 from llmautotel.speech import SpeechTextGuard
 
 TranscriptRole = Literal["user", "assistant"]
+
+_CONVERSATION_CONTEXT_POLICY = (
+    "最后一条用户消息是本轮的当前请求，前文只用于理解指代和必要背景。"
+    "用户插话、换问题或修正需求后，必须依据最新消息重新回答，"
+    "不要续答或补讲之前被打断的话题。\n"
+    "连续出现多条用户消息时，不要按顺序补答旧问题；直接回答最后一条，"
+    "除非用户明确要求继续旧话题或同时回答。先给当前问题的直接答案，"
+    "再补充必要信息，不重复开场或无关卖点。\n"
+    "上下文中标注的 AI 生成背景是被打断、尚未完整播放的草稿，"
+    "可用于理解用户指代，但不能假定用户已听到，也不要自动续讲。"
+    "背景标签及管理说明仅供内部使用，绝不能朗读、复述或出现在回复正文中。\n"
+    "只依据提供的产品资料介绍事实，不编造价格、优惠、保障或购买结果。\n"
+)
 
 
 @dataclass
@@ -80,11 +93,7 @@ class FinalTranscriptUserTurnStopStrategy(SpeechTimeoutUserTurnStopStrategy):
             return
         if self._text:
             await super()._maybe_trigger_user_turn_stopped()
-        elif (
-            not self._vad_user_speaking
-            and self._user_speech_wait_done
-            and self._stt_wait_done
-        ):
+        elif not self._vad_user_speaking and self._user_speech_wait_done and self._stt_wait_done:
             # 官方 wait_for_transcript 会阻止空文本收尾；真实 empty final 可结束。
             await self.trigger_user_turn_stopped()
 
@@ -113,16 +122,7 @@ def sales_prompt(settings: AppSettings) -> str:
         "不要问‘您平时用它干什么’、‘主要用来学习还是工作’或类似需求调查问题。"
         "用户主动提供需求时可以据此介绍相关价值，不再追问用途。"
         "拒绝目标行动与直接结束按下方工具规则处理，告别不追加推销。\n"
-        "最后一条用户消息是本轮的当前请求，前文只用于理解指代和必要背景。"
-        "用户插话、换问题或修正需求后，必须依据最新消息重新回答，"
-        "不要续答或补讲之前被打断的话题。\n"
-        "连续出现多条用户消息时，不要按顺序补答旧问题；直接回答最后一条，"
-        "除非用户明确要求继续旧话题或同时回答。先给当前问题的直接答案，"
-        "再补充必要信息，不重复开场或无关卖点。\n"
-        "上下文中标注的 AI 生成背景是被打断、尚未完整播放的草稿，"
-        "可用于理解用户指代，但不能假定用户已听到，也不要自动续讲。"
-        "背景标签及管理说明仅供内部使用，绝不能朗读、复述或出现在回复正文中。\n"
-        "只依据提供的产品资料介绍事实，不编造价格、优惠、保障或购买结果。\n"
+        f"{_CONVERSATION_CONTEXT_POLICY}"
         "首次明确拒绝目标行动时最多温和挽留一次，不持续施压；"
         "再次明确拒绝目标行动或直接要求结束时尊重其意愿，告别后挂断。\n"
         f"{HANGUP_POLICY}"
@@ -130,6 +130,42 @@ def sales_prompt(settings: AppSettings) -> str:
         f"销售目标：\n{sales.goal}\n\n"
         f"产品资料：\n{sales.product_info}\n\n"
         f"话术要求：\n{sales.instructions}"
+    )
+
+
+def consultation_prompt(settings: AppSettings) -> str:
+    """来电答疑按本通产品资料和咨询要求回答，不沿用销售配置。"""
+    consultation = settings.consultation
+    opening_rule = (
+        "系统会按配置尝试播放欢迎语；不要假定已经完整播放，优先回应最新用户发言。"
+        if consultation.opening.strip()
+        else "仅在对话中尚无用户发言时主动说一句简短欢迎语，邀请用户咨询产品；"
+        "不主动罗列卖点。已有用户发言时直接回应问题，不补欢迎语。"
+    )
+    return (
+        "你是一名通过语音接待来电的 AI 产品咨询助手。使用简体中文，自然、礼貌、简洁地对话。\n"
+        "围绕用户当前问题介绍产品功能、使用方法、价格和服务信息。"
+        "先给直接答案，一次只说一到两句；操作步骤按用户需要分次讲解。"
+        "不要输出 Markdown、列表或舞台指示。\n"
+        "这是来电产品咨询，不主动推销、不引导购买、不在每轮追问购买意向，"
+        "也不做销售挽留。用户主动询问如何购买时，只说明资料中已有的流程。"
+        "仅当用户的问题缺少回答所必需的信息时，问一个与当前问题直接相关的澄清问题，"
+        "不开展无关需求调查。\n"
+        "资料未说明或不足以判断时，明确说明暂无法确认，不编造功能、费用、优惠、"
+        "服务保证或操作结果；不承诺转接、修改订单等没有实际工具支持的动作。\n"
+        f"{_CONVERSATION_CONTEXT_POLICY}"
+        f"{CONSULTATION_HANGUP_POLICY}"
+        f"{opening_rule}\n\n"
+        f"产品资料：\n{consultation.product_info}\n\n"
+        f"咨询回复要求：\n{consultation.instructions}"
+    )
+
+
+def conversation_prompt(settings: AppSettings) -> str:
+    return (
+        sales_prompt(settings)
+        if settings.conversation.mode == "sales"
+        else consultation_prompt(settings)
     )
 
 
@@ -209,7 +245,7 @@ class VoiceSession:
         await self._state_changed("listening")
         if self._user_spoken or self._reason is not None:
             return
-        opening = self._settings.sales.opening.strip()
+        opening = self._settings.active_conversation.opening.strip()
         if opening:
             await self._worker.queue_frame(TTSSpeakFrame(text=opening, append_to_context=True))
         else:
@@ -239,10 +275,17 @@ class VoiceSession:
                     webrtc_connection=self._connection,
                     params=TransportParams(audio_in_enabled=True, audio_out_enabled=True),
                 )
-            context = LLMContext([{"role": "system", "content": sales_prompt(self._settings)}])
+            context = LLMContext(
+                [{"role": "system", "content": conversation_prompt(self._settings)}]
+            )
             conversation = InterruptedResponseContext(context)
             self._conversation = conversation
-            hangup = HangupController(context, conversation, self._hang_up_after_goodbye)
+            hangup = HangupController(
+                context,
+                conversation,
+                self._hang_up_after_goodbye,
+                mode=self._settings.conversation.mode,
+            )
             context.set_tools(hangup.tools())
             user, assistant = LLMContextAggregatorPair(
                 context,
@@ -259,8 +302,7 @@ class VoiceSession:
                     ),
                     # 分段 ASR 可比官方默认 5 秒回合 watchdog 更慢。
                     user_turn_stop_timeout=(
-                        self._settings.asr.timeout_seconds
-                        + self._settings.voice.vad_stop_seconds
+                        self._settings.asr.timeout_seconds + self._settings.voice.vad_stop_seconds
                     ),
                     # emptyfinal 同样结束识别回合，噪声 / 空转写不触发新模型回复。
                     empty_user_turn=None,
@@ -357,10 +399,7 @@ class VoiceSession:
                     await self._state_changed("speaking")
                 elif event.kind == SpeechEventKind.USER_SPEECH_STOPPED:
                     await self._state_changed("recognizing")
-                elif (
-                    event.kind == SpeechEventKind.BOT_SPEECH_STOPPED
-                    and self._state == "speaking"
-                ):
+                elif event.kind == SpeechEventKind.BOT_SPEECH_STOPPED and self._state == "speaking":
                     # 已发生新的用户停口 / 模型回复时，不让迟到的旧音频结束覆盖状态。
                     await self._state_changed("listening")
 

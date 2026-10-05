@@ -19,6 +19,19 @@ class SalesSettings(StrictModel):
     opening: str = ""
 
 
+ConversationMode = Literal["consultation", "sales"]
+
+
+class ConversationSettings(StrictModel):
+    mode: ConversationMode = "consultation"
+
+
+class ConsultationSettings(StrictModel):
+    product_info: str = ""
+    instructions: str = ""
+    opening: str = ""
+
+
 class ProviderSettings(StrictModel):
     base_url: str = ""
     model: str = ""
@@ -89,12 +102,18 @@ class VoiceSettings(StrictModel):
 
 
 class AppSettings(StrictModel):
+    conversation: ConversationSettings = Field(default_factory=ConversationSettings)
+    consultation: ConsultationSettings = Field(default_factory=ConsultationSettings)
     sales: SalesSettings = Field(default_factory=SalesSettings)
     asr: ASRSettings = Field(default_factory=ASRSettings)
     llm: LLMSettings = Field(default_factory=LLMSettings)
     tts: TTSSettings = Field(default_factory=TTSSettings)
     voice: VoiceSettings = Field(default_factory=VoiceSettings)
     telephony: TelephonySettings = Field(default_factory=TelephonySettings)
+
+    @property
+    def active_conversation(self) -> SalesSettings | ConsultationSettings:
+        return self.sales if self.conversation.mode == "sales" else self.consultation
 
     def public(self) -> dict[str, Any]:
         result = self.model_dump(
@@ -118,12 +137,16 @@ class AppSettings(StrictModel):
         result["telephony"] = self.telephony.private()
         return result
 
-    def missing_call_fields(self) -> list[str]:
+    def missing_conversation_fields(self) -> list[str]:
         missing: list[str] = []
-        if not self.sales.goal.strip():
+        if self.conversation.mode == "sales" and not self.sales.goal.strip():
             missing.append("销售目标")
-        if not self.sales.product_info.strip():
+        if not self.active_conversation.product_info.strip():
             missing.append("产品资料")
+        return missing
+
+    def missing_call_fields(self) -> list[str]:
+        missing = self.missing_conversation_fields()
         for stage, label in (("asr", "ASR"), ("llm", "LLM"), ("tts", "TTS")):
             provider = getattr(self, stage)
             if not provider.base_url:
@@ -151,6 +174,8 @@ class CallRecord(StrictModel):
     settings: dict[str, Any]
     transcript: list[TranscriptEntry] = Field(default_factory=list)
     channel: Literal["browser", "telephone"] = "browser"
+    direction: Literal["inbound", "outbound"] | None = None
+    caller: str | None = None
     provider: Literal["asterisk", "freeswitch", "aliyun", "tencent"] | None = None
     destination: str | None = None
     remote_id: str | None = None
