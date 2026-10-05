@@ -280,6 +280,31 @@ async def test_default_disabled_inbound_cannot_dial_hangup_or_invoke_model() -> 
 
 
 @pytest.mark.asyncio
+async def test_inbound_state_failure_hangs_up_bound_call_and_releases_control() -> None:
+    settings = configured_settings()
+    settings.telephony.tencent.inbound_enabled = True
+    recorder, control = Recorder(), CloudControl()
+    callbacks = recorder.callbacks()
+
+    async def fail_state(state: str) -> None:
+        raise RuntimeError("PRIVATE-RECORD-ERROR")
+
+    callbacks.on_state = fail_state
+    session = CloudVoiceSession(
+        "tencent",
+        "13800000001",
+        "local-id",
+        settings,
+        callbacks,
+        client=control,
+        incoming_remote_id="remote-id",
+    )
+    assert await session.run() == "provider_error"
+    assert control.requests == [] and control.hangups == ["remote-id"] and control.closed
+    assert "PRIVATE-RECORD-ERROR" not in str(recorder.errors)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("provider", ["aliyun", "tencent"])
 async def test_inbound_final_report_ends_without_outbound_or_extra_hangup(provider: str) -> None:
     settings = configured_settings()
@@ -365,6 +390,8 @@ async def test_tencent_inbound_gateway_validates_marker_and_discards_it_from_act
         assert control.requests == []
         with pytest.raises(HTTPException, match="平台会话标识"):
             session.validate_gateway(body | {"SessionId": "other-id"})
+        with pytest.raises(HTTPException, match="平台会话标识"):
+            session.validate_gateway(body | {"session_id": "remote-id", "SessionId": "other-id"})
         user_only = {
             "stream": True,
             "messages": [{"role": "user", "content": "[llmautotel_call_id:local-id]"}],

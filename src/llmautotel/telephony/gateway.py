@@ -143,9 +143,9 @@ class CloudVoiceSession:
             raise HTTPException(409, "电话会话标识不匹配")
         elif self.incoming:
             # OpenAI 协议没有规定电话 SessionId；若平台提供则必须精确匹配。
-            remote_id = body.get("session_id") or body.get("SessionId")
-            if remote_id is not None and remote_id != self.remote_id:
-                raise HTTPException(409, "电话平台会话标识不匹配")
+            for field in ("session_id", "SessionId"):
+                if field in body and body[field] != self.remote_id:
+                    raise HTTPException(409, "电话平台会话标识不匹配")
         messages = body.get("messages")
         if not isinstance(messages, list) or any(
             not isinstance(message, dict)
@@ -304,7 +304,12 @@ class CloudVoiceSession:
 
     async def _hangup(self) -> None:
         async with self._hangup_lock:
-            if self.remote_id is None or self._hung_up:
+            if (
+                self.remote_id is None
+                or self._hung_up
+                or not self.config.enabled
+                or (self.incoming and not self.config.inbound_enabled)
+            ):
                 return
             await self._client.hangup(self.remote_id)
             self._hung_up = True
@@ -352,6 +357,8 @@ class CloudVoiceSession:
             self._finished.set()
         except Exception:
             self._reason = "provider_error"
+            # 远端已绑定后，本地状态/记录异常也必须回收原电话。
+            self._stop_reason = self._stop_reason or self._reason
             await self.callbacks.on_error("云电话请求失败，请检查电话配置")
             self._finished.set()
         finally:
