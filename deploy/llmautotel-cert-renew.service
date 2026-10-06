@@ -1,0 +1,11 @@
+[Unit]
+Description=Renew LLMAutoTel IP HTTPS certificate
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+UMask=0077
+ExecStart=/opt/llmautotel/tools/bin/certbot renew --quiet --no-random-sleep-on-renew --config-dir /etc/llmautotel/acme --work-dir /var/lib/llmautotel-certbot --logs-dir /var/log/llmautotel-certbot --max-log-backups 7 --deploy-hook /etc/llmautotel/reload-nginx.sh
+TimeoutStartSec=10min

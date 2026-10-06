@@ -12,7 +12,13 @@ from typing import Any
 
 import httpx
 import pytest
-from aiortc import RTCConfiguration, RTCDataChannel, RTCPeerConnection, RTCSessionDescription
+from aiortc import (
+    RTCConfiguration,
+    RTCDataChannel,
+    RTCIceServer,
+    RTCPeerConnection,
+    RTCSessionDescription,
+)
 from aiortc.mediastreams import AudioStreamTrack, MediaStreamError, MediaStreamTrack
 from pipecat.frames.frames import (
     Frame,
@@ -124,8 +130,8 @@ class ClientPeer:
         )
 
 
-def client_peer() -> ClientPeer:
-    pc = RTCPeerConnection(RTCConfiguration(iceServers=[]))
+def client_peer(ice_servers: list[RTCIceServer] | None = None) -> ClientPeer:
+    pc = RTCPeerConnection(RTCConfiguration(iceServers=ice_servers or []))
     input_track = AudioStreamTrack()  # aiortc 自带静音轨道，不打开任何真实麦克风。
     pc.addTrack(input_track)
     channel = pc.createDataChannel("pipecat")

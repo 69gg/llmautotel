@@ -2,7 +2,7 @@
 
 使用 Python 3.12、uv 和 systemd。前端在本机构建后随代码发布，服务器不需要安装 Node.js，也不需要把 GitHub 登录凭据复制过去。应用由独立的 `llmautotel` 用户运行，配置和模型密钥保存在 `/var/lib/llmautotel/app.sqlite3`，代码放在 `/opt/llmautotel/releases`，`current` 链接选择当前发布。
 
-默认服务仅监听 `127.0.0.1:8765`。没有域名时，通过 SSH 隧道打开本机地址；浏览器允许 localhost 使用麦克风。应用尚无账号系统，不要把管理、配置和历史接口直接开放到公网。电话 provider 的原有开关沿用配置，部署不自动启用线路。
+默认服务仅监听 `127.0.0.1:8765`。没有域名时，可通过 SSH 隧道打开本机地址，或配置下述受信任的公网 IP HTTPS 入口；浏览器允许 localhost 和受信任 HTTPS 使用麦克风。应用尚无账号系统，公网入口必须增加鉴权，保护管理、配置和历史。电话 provider 的原有开关沿用配置，部署不自动启用线路。
 
 ## 准备发布
 
@@ -52,7 +52,62 @@ ssh -N -L 127.0.0.1:8767:127.0.0.1:8765 root@SERVER
 
 保持 SSH 连接，打开 `http://127.0.0.1:8767`，进入语音通话并允许麦克风。`8767` 是本机入口，可换成其他空闲端口；服务器端仍是环境文件指定的端口。SSH 隧道传输网页和信令，WebRTC 音频另行建立连接。默认直接使用 UDP；网络受限时，可配置下述 TURN TCP 中继。页面加载成功不代表音频已连通，必须另外验证协商与音频。
 
-有域名后可配置 HTTPS 和管理访问控制。云电话网关与回调仅开放文档列出的认证路径，其他接口留在管理网，见 [云平台接入](telephony-cloud.md)。
+也可使用域名配置 HTTPS。云电话网关与回调仅开放文档列出的认证路径，其他接口留在管理网，见 [云平台接入](telephony-cloud.md)。
+
+## 公网 IP HTTPS 与入口鉴权
+
+Let’s Encrypt 已支持受信任的公网 IPv4／IPv6 证书，须选择 `shortlived` profile，有效期 160 小时。此部署使用独立的 Certbot 5.4.0 环境和 Nginx，不改变语音应用依赖。证书工具的全部已验证版本记录在 [证书工具依赖](../deploy/certbot-requirements.txt)，安装时可复用该文件：
+
+```sh
+UV_TOOL_DIR=/opt/llmautotel/tools UV_TOOL_BIN_DIR=/opt/llmautotel/tools/bin \
+  uv tool install --python /usr/bin/python3.12 --no-python-downloads \
+  --with-requirements deploy/certbot-requirements.txt certbot==5.4.0
+```
+
+先检查 Nginx 的现有站点、公开端口和静态目录。IP 地址直接访问通常不发送域名 SNI，若 443 已有其他证书和站点，优先选择空闲的独立 HTTPS 端口，不改变已有 TLS 默认站点。证书验证使用 HTTP 80；若现有 IP 站点能静态提供 `/.well-known/acme-challenge/`，复用其 webroot，Certbot 只创建短暂验证文件。否则只在该站点增加专用验证 location，保留原业务路由。不要覆盖或停掉其他站点来腾出端口。
+
+将 `APP_PUBLIC_IP` 和 `APP_ACME_WEBROOT` 设置为实际地址与静态目录，创建 root 持有的专属目录，再申请生产证书：
+
+```sh
+install -d -m 0700 /etc/llmautotel/acme /var/lib/llmautotel-certbot /var/log/llmautotel-certbot
+/opt/llmautotel/tools/bin/certbot certonly --non-interactive --agree-tos \
+  --required-profile shortlived --webroot --webroot-path "$APP_ACME_WEBROOT" \
+  --ip-address "$APP_PUBLIC_IP" --cert-name llmautotel-ip \
+  --config-dir /etc/llmautotel/acme --work-dir /var/lib/llmautotel-certbot \
+  --logs-dir /var/log/llmautotel-certbot
+```
+
+这是标准生产 CA 证书，不需要客户端导入私有根证书或绕过浏览器警告。Certbot 5.4.0 可不指定联系邮箱；需要通知或账号恢复联系时自行配置真实邮箱。参考 [Let’s Encrypt IP 证书与 Certbot 说明](https://letsencrypt.org/2026/03/11/shorter-certs-certbot)。
+
+替换 [Nginx HTTPS 模板](../deploy/nginx-https.conf.example) 的监听地址、公开 Origin（须含非默认端口）、公开 IP、证书、私钥、密码文件和后端地址，放入 Nginx `http` 上下文中的独立配置。签发证书后才启用模板。后端继续只监听本机；所有网页、静态资源、REST、配置、历史与 SDP／ICE 接口均由 Nginx Basic Auth 保护。模板拒绝其他浏览器 Origin，允许命令行省略 Origin；登录 Authorization 在代理到后端前清除。无需修改前端：浏览器登录后为同源请求发送鉴权。
+
+生成独立随机管理密码，不复用模型、云账号或 TURN 密钥。用 `openssl passwd -6 -stdin` 生成 crypt 哈希，按 `用户名:哈希` 保存为 `/etc/llmautotel/https.htpasswd`，由 root 持有、授予实际 Nginx worker 用户所在组读取、权限 `0640`。不要把密码作为命令参数、写入 Git 或输出到日志。供管理员取用的 `/etc/llmautotel/https-access.json` 应仅保存 URL、用户名和入口密码，root 持有、权限 `0600`；本机副本放在 Git 忽略的数据目录中并保持 `0600`。浏览器首次访问会显示登录框，使用该文件中的凭据。
+
+配置和登录文件就绪后执行 `nginx -t` 并 reload，只重载 Nginx，不重启语音应用。不要用未经认证的健康接口作为公网特例。后续开通云电话时，另行配置其独立认证网关，不把管理密码交给云平台或解除整个入口的鉴权。
+
+### 自动续期与验证
+
+安装 [续期 service](../deploy/llmautotel-cert-renew.service)、[timer](../deploy/llmautotel-cert-renew.timer) 到 `/etc/systemd/system/`，将 [reload hook](../deploy/reload-nginx.sh) 安装为 `/etc/llmautotel/reload-nginx.sh`，root 持有、权限 `0700`。检查路径后启用 timer：
+
+```sh
+systemd-analyze verify /etc/systemd/system/llmautotel-cert-renew.service /etc/systemd/system/llmautotel-cert-renew.timer
+systemctl daemon-reload
+systemctl enable --now llmautotel-cert-renew.timer
+systemctl start llmautotel-cert-renew.service
+systemctl list-timers llmautotel-cert-renew.timer --no-pager
+```
+
+timer 每天检查两次，最多随机延后一小时，补执行错过的检查；Certbot 仅在证书需要续期时签发。成功后 hook 先验证 Nginx 配置，再 reload 加载新证书，不重启通话进程。续期日志使用独立目录并限制轮转保留数量。
+
+```sh
+/opt/llmautotel/tools/bin/certbot renew --dry-run --non-interactive \
+  --no-random-sleep-on-renew --config-dir /etc/llmautotel/acme \
+  --work-dir /var/lib/llmautotel-certbot --logs-dir /var/log/llmautotel-certbot \
+  --deploy-hook /etc/llmautotel/reload-nginx.sh --run-deploy-hooks
+journalctl -u llmautotel-cert-renew.service --no-pager
+```
+
+dry-run 使用 CA 的测试环境，只验证验证路径和部署 hook，不替换生产证书。HTTPS 自动化测试 `tests/test_https_deployment.py` 启动隔离的真实 Nginx、TLS 与受控后端，验证匿名／错误密码拒绝、静态及 API／信令全覆盖、登录凭据不转发、Origin 校验以及协议和端口保留。需要 Nginx／OpenSSL；缺少时跳过，可在已安装 Nginx 的服务器运行 `python3 tests/test_https_deployment.py -v`。公网部署还须用系统正常 CA 信任校验实际证书，并通过受保护的 offer／ICE 建立真实音频连接。
 
 ## 可选 STUN／TURN
 

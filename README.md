@@ -17,7 +17,7 @@ uv run llmautotel
 
 ## 服务器部署
 
-Linux 服务器使用独立服务用户、systemd 和受限权限 SQLite。没有域名时可通过 SSH 隧道访问 localhost；代码、数据与凭据分开发布，电话线路保持原有开关。步骤和运行模板见 [服务器部署说明](docs/server-deployment.md)。
+Linux 服务器使用独立服务用户、systemd 和受限权限 SQLite。没有域名时可通过 SSH 隧道访问 localhost，也可使用受信任的公网 IP HTTPS 证书、入口鉴权和自动续期。代码、数据与凭据分开发布，电话线路保持原有开关。步骤和运行模板见 [服务器部署说明](docs/server-deployment.md)。
 
 ## 使用
 

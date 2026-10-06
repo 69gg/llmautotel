@@ -1,0 +1,37 @@
+# 安装到 Nginx http 上下文；先替换占位符并取得证书。
+map $http_origin $llmautotel_origin_allowed {
+    default 0;
+    "" 1;
+    "REPLACE_WITH_PUBLIC_ORIGIN" 1;
+}
+
+server {
+    listen REPLACE_WITH_HTTPS_LISTEN ssl;
+    server_name REPLACE_WITH_PUBLIC_IP;
+
+    ssl_certificate REPLACE_WITH_FULLCHAIN;
+    ssl_certificate_key REPLACE_WITH_PRIVATE_KEY;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    auth_basic "LLMAutoTel";
+    auth_basic_user_file REPLACE_WITH_PASSWORD_FILE;
+    client_max_body_size 1m;
+    add_header Cache-Control "no-store" always;
+    add_header X-Content-Type-Options "nosniff" always;
+
+    location / {
+        # 浏览器的跨站请求不能使用缓存的管理登录；命令行可省略 Origin。
+        if ($llmautotel_origin_allowed = 0) { return 403; }
+
+        proxy_pass REPLACE_WITH_UPSTREAM;
+        proxy_http_version 1.1;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Authorization "";
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_read_timeout 120s;
+    }
+}
