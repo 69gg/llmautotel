@@ -38,4 +38,10 @@ TTS 可配置 `instructions` 发音风格，留空时保持原请求。MiMo 将�
 
 `deepseek-flash` 已通过实际适配器验证流式工具：最新规则下首次“不用了，谢谢”调用 `retain_once`，挽留后的新回合同句调用 `hang_up` / `purchase_refusal`；“请挂断，谢谢”直接调用 `hang_up` / `direct_exit`。嫌贵、犹豫及拒绝后继续提问时继续对话，不询问挂断。打断背景之后的工具证据仍为最新用户原文。该验证只观察模型工具决策及内存状态消费，没有通过真实设备执行通话。本机测试资料中原有“拒绝立即道别、通话由用户挂断”的话术同步替换为一次挽留和工具挂断规则。
 
+## 2026-11-14 接口复测
+
+上述通过结果为历史验证，不代表当前接口健康。本轮只读本机配置复测时，MiMo ASR 与 DeepSeek 均返回 **HTTP 402**，两次完整语音基准未取得成功回复；没有根据状态码判断具体余额、套餐或权限原因。MiMo TTS 可返回非空 PCM，但三次请求到首块为 1127.7、1831.6、621.5 ms，不能保证整条链路稳定在 1 秒内。
+
+本轮未改模型地址、凭据、关闭思考参数或正式配置，未保存音频。账户方恢复对应接口后可按 [响应速度测量](latency.md) 重新验证；该文档也列出保留旧接口的流式替换方案。
+
 依据：[MiMo ASR](https://mimo.mi.com/docs/zh-CN/quick-start/usage-guide/audio/Speech-Recognition)、[MiMo TTS](https://mimo.mi.com/docs/zh-CN/quick-start/usage-guide/audio/speech-synthesis-v2.5)、[DeepSeek 官方调用示例](https://api-docs.deepseek.com/zh-cn/)。
