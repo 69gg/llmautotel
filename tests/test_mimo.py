@@ -51,9 +51,7 @@ def sse_delta(delta: dict[str, Any] | None) -> bytes:
         "created": 0,
         "model": "mimo-v2.5-tts",
         "choices": (
-            [{"index": 0, "delta": delta, "finish_reason": None}]
-            if delta is not None
-            else []
+            [{"index": 0, "delta": delta, "finish_reason": None}] if delta is not None else []
         ),
     }
     return f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n".encode()
@@ -268,16 +266,18 @@ async def test_mimo_asr_failure_is_safe_and_not_retried(failure: str) -> None:
 async def test_mimo_tts_sdk_request_and_sse_pcm_alignment(instructions: str) -> None:
     requests: list[httpx2.Request] = []
     bodies: list[dict[str, Any]] = []
-    stream = SSEChunks([
-        sse_delta(None),
-        sse_delta({"role": "assistant", "content": ""}),
-        sse_delta({"audio": None}),
-        sse_delta({"audio": {"id": "metadata-only"}}),
-        sse_audio(b"\x01"),
-        sse_audio(b"\x00\x02"),
-        sse_audio(b"\x00"),
-        b"data: [DONE]\n\n",
-    ])
+    stream = SSEChunks(
+        [
+            sse_delta(None),
+            sse_delta({"role": "assistant", "content": ""}),
+            sse_delta({"audio": None}),
+            sse_delta({"audio": {"id": "metadata-only"}}),
+            sse_audio(b"\x01"),
+            sse_audio(b"\x00\x02"),
+            sse_audio(b"\x00"),
+            b"data: [DONE]\n\n",
+        ]
+    )
 
     async def handler(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
@@ -287,8 +287,11 @@ async def test_mimo_tts_sdk_request_and_sse_pcm_alignment(instructions: str) -> 
     client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
     service = CompatibleTTSService(
         TTSSettings(
-            protocol="mimo", base_url="https://fixture.invalid/custom/v1",
-            model="mimo-v2.5-tts", voice="苏打", api_key=SecretStr("fixture-tts-key"),
+            protocol="mimo",
+            base_url="https://fixture.invalid/custom/v1",
+            model="mimo-v2.5-tts",
+            voice="苏打",
+            api_key=SecretStr("fixture-tts-key"),
             instructions=instructions,
         ),
         mimo_http_client=client,
@@ -332,11 +335,15 @@ async def test_mimo_tts_sdk_request_and_sse_pcm_alignment(instructions: str) -> 
 )
 async def test_mimo_tts_rejects_invalid_or_missing_pcm(delta: dict[str, Any]) -> None:
     stream = SSEChunks([sse_delta(delta), b"data: [DONE]\n\n"])
-    client = httpx2.AsyncClient(transport=httpx2.MockTransport(
-        lambda request: httpx2.Response(
-            200, headers={"content-type": "text/event-stream"}, stream=stream,
+    client = httpx2.AsyncClient(
+        transport=httpx2.MockTransport(
+            lambda request: httpx2.Response(
+                200,
+                headers={"content-type": "text/event-stream"},
+                stream=stream,
+            )
         )
-    ))
+    )
     service = CompatibleTTSService(
         TTSSettings(protocol="mimo", base_url="http://fixture.invalid/v1", model="mimo-v2.5-tts"),
         mimo_http_client=client,
@@ -396,10 +403,13 @@ async def test_mimo_tts_cancel_closes_sdk_stream_and_next_request_has_no_old_aud
         requests += 1
         if requests == 1:
             return httpx2.Response(
-                200, headers={"content-type": "text/event-stream"}, stream=stream,
+                200,
+                headers={"content-type": "text/event-stream"},
+                stream=stream,
             )
         return httpx2.Response(
-            200, headers={"content-type": "text/event-stream"},
+            200,
+            headers={"content-type": "text/event-stream"},
             content=sse_audio(b"\x03\x00") + b"data: [DONE]\n\n",
         )
 
@@ -439,11 +449,15 @@ async def test_mimo_tts_cancel_closes_sdk_stream_and_next_request_has_no_old_aud
 
 async def test_mimo_tts_consumer_close_at_audio_yield_closes_sdk_stream() -> None:
     stream = DelayedAudio()
-    client = httpx2.AsyncClient(transport=httpx2.MockTransport(
-        lambda request: httpx2.Response(
-            200, headers={"content-type": "text/event-stream"}, stream=stream,
+    client = httpx2.AsyncClient(
+        transport=httpx2.MockTransport(
+            lambda request: httpx2.Response(
+                200,
+                headers={"content-type": "text/event-stream"},
+                stream=stream,
+            )
         )
-    ))
+    )
     service = CompatibleTTSService(
         TTSSettings(protocol="mimo", base_url="http://fixture.invalid/v1", model="mimo-v2.5-tts"),
         mimo_http_client=client,

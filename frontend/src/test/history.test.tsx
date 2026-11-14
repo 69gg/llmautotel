@@ -158,3 +158,22 @@ describe('本机文字历史', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });
+
+it.each([[true, '双向流式'], [false, 'HTTP 分句']] as const)('DeepSeek 历史保存文字输入模式：%s', async (streaming, label) => {
+  const user = userEvent.setup();
+  const settings = {
+    ...fixtureSettings,
+    asr: { ...fixtureSettings.asr, protocol: 'deepseek' as const, model: 'retained-old-asr' },
+    tts: { ...fixtureSettings.tts, protocol: 'deepseek' as const, model: 'retained-old-tts', streaming_input: streaming },
+  };
+  vi.spyOn(api, 'calls').mockResolvedValue([summary]);
+  vi.spyOn(api, 'call').mockResolvedValue({ ...record, settings });
+  render(<HistoryPage />);
+  await ready();
+  await user.click(screen.getByText('查看本次配置快照'));
+  expect(screen.getAllByText('DeepSeek 工具（无需模型名）')).toHaveLength(2);
+  expect(screen.queryByText('retained-old-asr')).not.toBeInTheDocument();
+  expect(screen.queryByText('retained-old-tts')).not.toBeInTheDocument();
+  expect(screen.getByText(/服务默认音色/)).toBeVisible();
+  expect(screen.getByText(label)).toBeVisible();
+});

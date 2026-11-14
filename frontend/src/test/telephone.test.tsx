@@ -239,3 +239,16 @@ describe('手动电话外呼', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Asterisk 媒体接入失败。');
   });
 });
+
+it('SIP 媒体线路可使用空模型名和默认音色的 DeepSeek 语音工具', async () => {
+  const user = userEvent.setup();
+  const settings: Settings = {
+    ...configured,
+    asr: { ...configured.asr, protocol: 'deepseek', model: '' },
+    tts: { ...configured.tts, protocol: 'deepseek', model: '', voice: '' },
+  };
+  page(settings);
+  await user.selectOptions(await screen.findByLabelText('外呼 provider'), 'asterisk');
+  await user.type(screen.getByLabelText('被叫号码'), '13800000000');
+  expect(screen.getByRole('button', { name: '发起外呼' })).toBeEnabled();
+});

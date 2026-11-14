@@ -54,3 +54,5 @@ uv run python -m llmautotel.benchmark \
 DeepSeek TTS 现已支持 WebSocket 双向流式输入：在整句尚未生成完成时开始请求并接收音频。`tts.protocol=deepseek` 默认启用，`streaming_input=false` 可回退 HTTP 分句；基准与真实通话使用同一工厂选择协议。两条路径都按真实 PCM 统计，不使用占位话。
 
 DeepSeek ASR 官方不支持流式识别，仍需用户停口后上传完整 WAV。这能减少 TTS 侧等待，但无法消除 ASR、LLM、网络和设备延迟；没有成功的完整链路及终端测量前，1 秒目标仍未验收。配置与检查点边界见 [DeepSeek 语音](deepseek-audio.md)。
+
+本轮新工具真实复测：DeepSeek WebSocket TTS、HTTP TTS 和 ASR 均为 HTTP 402，没有可报告的成功首音或完整回复延迟；ASR 静音探测不代表识别准确率测试。与前节 MiMo 单项结果分开记录，不用旧结果替代新接口验收。

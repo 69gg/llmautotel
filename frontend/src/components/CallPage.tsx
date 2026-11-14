@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { conversationConfigured, conversationMode, conversationTitle, type Settings } from '../types';
+import { conversationConfigured, conversationMode, conversationTitle, voiceModelsConfigured, type Settings } from '../types';
 import { VoiceCallController, type CallState, type VoiceSnapshot } from '../voiceCall';
 import { Icon } from './Icon';
 import { LatencyDetails } from './LatencyDetails';
@@ -16,7 +16,7 @@ export function CallPage({ settings, voice, controller, onConfigure }: { setting
   const transcriptEnd = useRef<HTMLDivElement>(null);
   const running = !['idle', 'ended'].includes(voice.state);
   const connected = !['idle', 'ended', 'connecting', 'ending'].includes(voice.state);
-  const hasConfig = conversationConfigured(settings) && [ settings.asr.base_url, settings.asr.model, settings.llm.base_url, settings.llm.model, settings.tts.base_url, settings.tts.model, settings.tts.voice].every(value => value.trim());
+  const hasConfig = conversationConfigured(settings) && voiceModelsConfigured(settings);
   const snapshot = voice.call?.settings ?? settings;
   const goal = conversationTitle(snapshot);
   const level = voice.state === 'speaking' ? voice.remoteLevel : voice.muted ? 0 : voice.localLevel;

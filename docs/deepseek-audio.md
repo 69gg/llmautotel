@@ -30,4 +30,6 @@
 
 自动化使用真实 loopback WebSocket 服务验证多次文字输入、未生成完就到达音频、按句完成确认、采样对齐、中文金额边界、迟到连接、连续打断、告别检查点、合成中挂断和无响应超时；使用可控 HTTP 服务验证完整地址、鉴权、仅文件上传、自动语种、无模型字段、两个音色和默认音色、PCM 对齐与采样率、失败去敏和独立配置持久化。真实账户和设备效果单独验收，不以协议测试代替延迟验收。
 
+本轮真实账户复测：WebSocket TTS、HTTP TTS 和 ASR 均返回 HTTP 402，未获得成功语音样本。ASR 使用静音 WAV 仅探测协议／账户响应，不作为识别效果验证；未修改正式配置。完整结果和待验证范围见 [验收记录](acceptance.md)。
+
 官方资料：[TTS](https://api-docs.deepseek.com/zh-cn/guides/tts)、[ASR](https://api-docs.deepseek.com/zh-cn/guides/asr)。

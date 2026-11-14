@@ -84,3 +84,18 @@ describe('工作台导航', () => {
     expect(fake.disconnect).toHaveBeenCalledTimes(1);
   });
 });
+
+it('DeepSeek 语音不要求模型和音色，网页开始按钮可用', async () => {
+  const user = userEvent.setup();
+  vi.spyOn(api, 'settings').mockResolvedValue({
+    ...fixtureSettings,
+    asr: { ...fixtureSettings.asr, protocol: 'deepseek', base_url: 'https://asr.test/v1' },
+    llm: { ...fixtureSettings.llm, base_url: 'https://llm.test/v1', model: 'llm' },
+    tts: { ...fixtureSettings.tts, protocol: 'deepseek', base_url: 'https://tts.test/v1' },
+  });
+  const start = vi.spyOn(api, 'startCall');
+  render(<App />);
+  await user.click(await screen.findByRole('button', { name: '语音通话' }));
+  expect(await screen.findByRole('button', { name: '开始通话' })).toBeEnabled();
+  expect(start).not.toHaveBeenCalled();
+});

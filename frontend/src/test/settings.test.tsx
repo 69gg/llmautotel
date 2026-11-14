@@ -142,3 +142,94 @@ describe('供应商协议与思考参数', () => {
     expect(save.mock.calls[0][0].llm.reasoning_effort).toBe('none');
   });
 });
+
+describe('DeepSeek 语音工具配置', () => {
+  it('独立选择自动语种 ASR，保留旧模型、语言、地址及密钥', async () => {
+    const user = userEvent.setup();
+    const settings = {
+      ...fixtureSettings,
+      asr: { ...fixtureSettings.asr, base_url: 'https://asr.test/v1', model: 'old-asr', language: 'en' },
+    };
+    const save = vi.spyOn(api, 'saveSettings').mockResolvedValue(settings);
+    render(<SettingsPage settings={settings} onSave={vi.fn()} />);
+    await user.selectOptions(screen.getByLabelText('语音识别接口协议'), 'deepseek');
+    expect(screen.getByLabelText('语音识别模型名称')).toBeDisabled();
+    expect(screen.getByLabelText('识别语言')).toBeDisabled();
+    expect(screen.getByText(/官方暂不支持流式识别/)).toBeInTheDocument();
+    expect(screen.getByLabelText('语音合成接口协议')).toHaveValue('openai');
+    await user.click(screen.getAllByRole('button', { name: '保存配置' })[0]);
+    await waitFor(() => expect(save).toHaveBeenCalledOnce());
+    const body = save.mock.calls[0][0];
+    expect(body.asr).toMatchObject({ protocol: 'deepseek', base_url: settings.asr.base_url, model: 'old-asr', language: 'en' });
+    expect(body.asr).not.toHaveProperty('api_key');
+    expect(body.asr).not.toHaveProperty('api_key_set');
+    expect(body.tts).toMatchObject({ protocol: 'openai' });
+    expect(body.llm).toEqual(settingsUpdate(settings, { asr: '', llm: '', tts: '' }).llm);
+  });
+
+  it('旧 TTS 切换后提示修正音色和采样率，明确修正后保存 HTTP 或流式选项', async () => {
+    const user = userEvent.setup();
+    const settings = {
+      ...fixtureSettings,
+      tts: { ...fixtureSettings.tts, base_url: 'https://voice.test/v1', model: 'old-model', voice: 'old-voice', sample_rate: 16000, instructions: '自然短句' },
+    };
+    const save = vi.spyOn(api, 'saveSettings').mockResolvedValue(settings);
+    render(<SettingsPage settings={settings} onSave={vi.fn()} />);
+    await user.selectOptions(screen.getByLabelText('语音合成接口协议'), 'deepseek');
+    expect(screen.getByLabelText('音色名称')).toHaveValue('old-voice');
+    expect(screen.getByLabelText('PCM 采样率')).toHaveValue(16000);
+    expect(screen.getByLabelText('语音合成模型名称')).toBeDisabled();
+    expect(screen.getByLabelText('语音表达要求')).toBeDisabled();
+    expect(screen.getByLabelText('DeepSeek 文字输入方式')).toHaveValue('stream');
+    await user.click(screen.getAllByRole('button', { name: '保存配置' })[0]);
+    expect(await screen.findByRole('alert')).toHaveTextContent('24000');
+    expect(save).not.toHaveBeenCalled();
+    await user.clear(screen.getByLabelText('音色名称'));
+    await user.type(screen.getByLabelText('音色名称'), 'tide');
+    await user.clear(screen.getByLabelText('PCM 采样率'));
+    await user.type(screen.getByLabelText('PCM 采样率'), '24000');
+    await user.selectOptions(screen.getByLabelText('DeepSeek 文字输入方式'), 'http');
+    await user.click(screen.getAllByRole('button', { name: '保存配置' })[0]);
+    await waitFor(() => expect(save).toHaveBeenCalledOnce());
+    expect(save.mock.calls[0][0].tts).toMatchObject({ protocol: 'deepseek', base_url: settings.tts.base_url, model: 'old-model', voice: 'tide', sample_rate: 24000, instructions: '自然短句', streaming_input: false });
+    expect(save.mock.calls[0][0].tts).not.toHaveProperty('api_key_set');
+  });
+
+  it('切回 MiMo 可编辑原模型和语气，连接参数和流式开关不被重置', async () => {
+    const user = userEvent.setup();
+    const settings = {
+      ...fixtureSettings,
+      tts: { ...fixtureSettings.tts, protocol: 'mimo' as const, base_url: 'https://voice.test/v1', model: 'configured-tts', voice: 'configured-voice', instructions: '自然短句', streaming_input: false },
+    };
+    render(<SettingsPage settings={settings} onSave={vi.fn()} />);
+    await user.selectOptions(screen.getByLabelText('语音合成接口协议'), 'deepseek');
+    expect(screen.getByLabelText('DeepSeek 文字输入方式')).toHaveValue('http');
+    await user.selectOptions(screen.getByLabelText('DeepSeek 文字输入方式'), 'stream');
+    await user.selectOptions(screen.getByLabelText('语音合成接口协议'), 'mimo');
+    expect(screen.queryByLabelText('DeepSeek 文字输入方式')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('语音合成模型名称')).toBeEnabled();
+    expect(screen.getByLabelText('语音合成模型名称')).toHaveValue('configured-tts');
+    expect(screen.getByLabelText('音色名称')).toHaveValue('configured-voice');
+    expect(screen.getByLabelText('语音表达要求')).toBeEnabled();
+    expect(screen.getByLabelText('语音表达要求')).toHaveValue('自然短句');
+    expect(screen.getByLabelText('语音合成 API 地址')).toHaveValue(settings.tts.base_url);
+    await user.selectOptions(screen.getByLabelText('语音合成接口协议'), 'deepseek');
+    expect(screen.getByLabelText('DeepSeek 文字输入方式')).toHaveValue('stream');
+  });
+
+  it('DeepSeek 允许空模型与默认音色，流式选项往返保存', async () => {
+    const user = userEvent.setup();
+    const settings = {
+      ...fixtureSettings,
+      asr: { ...fixtureSettings.asr, protocol: 'deepseek' as const },
+      tts: { ...fixtureSettings.tts, protocol: 'deepseek' as const, streaming_input: false },
+    };
+    const save = vi.spyOn(api, 'saveSettings').mockResolvedValue({ ...settings, tts: { ...settings.tts, streaming_input: true } });
+    render(<SettingsPage settings={settings} onSave={vi.fn()} />);
+    await user.selectOptions(screen.getByLabelText('DeepSeek 文字输入方式'), 'stream');
+    await user.click(screen.getAllByRole('button', { name: '保存配置' })[0]);
+    await waitFor(() => expect(save).toHaveBeenCalledOnce());
+    expect(save.mock.calls[0][0].tts).toMatchObject({ protocol: 'deepseek', model: '', voice: '', streaming_input: true });
+    expect(screen.getByLabelText('DeepSeek 文字输入方式')).toHaveValue('stream');
+  });
+});

@@ -6,7 +6,7 @@ export const fixtureSettings: Settings = {
   sales: { style: 'conversational', goal: '介绍订阅服务', product_info: '月费 20 元', instructions: '', opening: '' },
   asr: { base_url: '', model: '', timeout_seconds: 30, api_key_set: true, protocol: 'openai', language: 'zh' },
   llm: { base_url: '', model: '', timeout_seconds: 30, api_key_set: false, thinking: null, reasoning_effort: null },
-  tts: { base_url: '', model: '', timeout_seconds: 30, api_key_set: false, protocol: 'openai', voice: '', sample_rate: 24000, instructions: '' },
+  tts: { base_url: '', model: '', timeout_seconds: 30, api_key_set: false, protocol: 'openai', voice: '', sample_rate: 24000, instructions: '', streaming_input: true },
   voice: { vad_start_seconds: 0.1, vad_stop_seconds: 0.3, vad_confidence: 0.7, response_chunking: 'first_clause', first_clause_min_chars: 8, response_target_ms: 1000 },
   telephony: {
     public_base_url: '',

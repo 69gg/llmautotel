@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { api } from '../api';
-import { conversationConfigured, conversationMode, conversationTitle, callSource, settingsUpdate, type InboundProviderStatus, type CallRecord, type Settings, type TelephonyProvider, type TelephonyProviderName, type TelephonySecretDrafts } from '../types';
+import { conversationConfigured, conversationMode, conversationTitle, voiceModelsConfigured, callSource, settingsUpdate, type InboundProviderStatus, type CallRecord, type Settings, type TelephonyProvider, type TelephonyProviderName, type TelephonySecretDrafts } from '../types';
 import { duration } from './CallPage';
 import { Icon } from './Icon';
 
@@ -55,8 +55,9 @@ export function TelephonePage({ settings, onSave, onConfigure, onBrowserCall }: 
   const occupied = running(call);
   const telephone = call?.channel === 'telephone' ? call : null;
   const cloudConversation = (providers.find(provider => provider.id === telephone?.provider) ?? selectedDial)?.mode === 'cloud';
-  const modelConfig = conversationConfigured(settings) && [ settings.llm.base_url, settings.llm.model,
-    ...(selectedDial?.mode === 'media' ? [settings.asr.base_url, settings.asr.model, settings.tts.base_url, settings.tts.model, settings.tts.voice] : [])].every(value => value.trim());
+  const modelConfig = conversationConfigured(settings) && (selectedDial?.mode === 'media'
+    ? voiceModelsConfigured(settings)
+    : [settings.llm.base_url, settings.llm.model].every(value => value.trim()));
   const dialEnabled = dialProvider !== '' && settings.telephony[dialProvider].enabled;
   const visibleCallError = callError || pollError || (telephone?.status === 'failed' ? endReasons[telephone.end_reason ?? ''] ?? telephone.end_reason ?? '电话接入失败。' : '');
 

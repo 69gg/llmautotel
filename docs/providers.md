@@ -22,6 +22,16 @@ API 地址填写服务商兼容接口的根地址，例如服务部署在 `/v1` 
 
 MiMo 复用同一 Pipecat WAV 分段、FIFO 最终转写、音频排队、句级提交和打断清理逻辑。ASR 使用非流式单段识别，编码后的音频不能超过 10 MB；TTS 使用流式 PCM16LE 单声道，固定为 **24000 Hz**，配置中其他采样率会被拒绝。空 ASR 结果不会生成用户发言；空 TTS、非法 Base64 或不完整 PCM 采样会结束会话并提示合成失败。SDK 音频流在取消或生成器关闭时释放。
 
+DeepSeek 工具协议独立选择，不能按普通 OpenAI 音频路径调用：
+
+| 阶段 | 请求 | 格式 |
+| --- | --- | --- |
+| DeepSeek ASR | `POST {base_url}/tools/asr` | 仅 multipart `file`，不发模型／语言；整段识别，不支持流式 |
+| DeepSeek TTS | WebSocket `{base_url}/tools/tts`（自动转换 ws/wss） | 发送增量 `text` 与 `finish_text` 事件，接收 PCM 和 `finish/success`；默认启用 |
+| DeepSeek TTS 兼容 | `POST {base_url}/tools/tts` | `streaming_input=false`，发送 `text/format=pcm/voice_id`，流式接收 PCM |
+
+DeepSeek TTS 固定 24 kHz 单声道 PCM16LE，不发送模型名或语气参数；默认音色留空，或选 `stella/tide`。双向流在完整句子生成前启动合成，中文句段独立连接以保留播放检查点；打断丢弃旧结果并释放旧连接。详见 [限制与接入](deepseek-audio.md)。
+
 文本 LLM 的 `thinking` 与 `reasoning_effort` 可单独配置，留空时省略。思考模式通过 `extra_body.thinking.type` 传给兼容接口，推理强度通过 `reasoning_effort` 传入。服务商须支持这些可选参数。应用不发送 `max_tokens` 或 `max_completion_tokens`；`reasoning_content` 不朗读，只将最终回答 `content` 送入 TTS。
 
 本机当前所选服务的配置说明见 [MiMo 与 DeepSeek 接入](model-setup.md)，其中不包含密钥。

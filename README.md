@@ -22,7 +22,7 @@ Linux 服务器使用独立服务用户、systemd 和受限权限 SQLite。没�
 ## 使用
 
 1. 进入“对话配置”，选择默认的产品咨询，填写产品资料和回复要求。固定开场白可留空，由 AI 生成简短欢迎。选择销售模式可使用原有销售目标、资料和话术；两组内容独立保存，切换不会删除。
-2. 分别填写 ASR、文本 LLM 和 TTS 的 API 根地址与模型名；TTS 还需音色。密钥只在需要鉴权时填写，三个服务可以属于不同供应商。
+2. 分别选择 ASR 与 TTS 协议，填写三个服务的 API 根地址及所需模型名、音色。DeepSeek 语音工具无需模型名，音色可留空。密钥只在需要鉴权时填写，三个服务可以属于不同供应商。
 3. 保存配置，回到“语音通话”点击开始并允许麦克风访问。连接就绪后 AI 先说话；你开口时会打断它，停止说话后根据新发言回应。换问题后直接回答当前问题，明确要求继续时才接回旧话题。
 4. 用静音按钮暂停发送麦克风声音，挂断结束通话。咨询模式按资料答疑，不主动推销或挽留；仅在明确要求结束或明确表示咨询结束时礼貌告别。销售模式保留首次购买拒绝挽留一次、再次拒绝或直接要求结束时告别挂断。告别带祝福，播放结束后才挂断；原生语音告别期间再次开口会取消待执行挂断。云平台播放确认范围见相应接入文档。切换页面不会挂断；通话期间保存的配置用于下一通。
 5. 在“通话记录”查看文字、时间、目标、结束原因和当时的配置快照。被打断的输出有“播放未完成”标记，已结束记录可删除。
@@ -40,9 +40,13 @@ Linux 服务器使用独立服务用户、systemd 和受限权限 SQLite。没�
 | ASR | `/audio/transcriptions` | WAV multipart，JSON `text`，默认识别语言 `zh` |
 | 文本 LLM | `/chat/completions` | 标准流式 SSE 文本 |
 | TTS | `/audio/speech` | 原始单声道、16 位小端 PCM，默认采样率 24 kHz |
+| DeepSeek ASR | `/tools/asr` | 整段 WAV 上传，自动语种，官方不支持流式识别 |
+| DeepSeek TTS | `/tools/tts` | WebSocket 双向流式文字／PCM，或 HTTP 分句；固定 24 kHz |
 
 地址填写接口根路径，应用会追加对应接口路径。TTS 音色允许服务商自定义名称，采样率必须与服务实际输出一致；WAV、MP3、Opus 不在第一版 TTS 兼容范围。未预填真实服务商、模型或密钥。详细请求与鉴权规则见 [模型接入文档](docs/providers.md)。
 小米 MiMo 可在 ASR / TTS 中分别选择“小米 MiMo”协议，使用 `/chat/completions` 传输 WAV Base64 和流式 PCM 音频。文本 LLM 支持可选思考模式和推理强度，不发送 token 上限。MiMo 与 DeepSeek 的具体配置见 [接入说明](docs/model-setup.md)。
+
+DeepSeek 语音协议可分别选择，TTS 默认双向流式，保留 HTTP 分句选项。支持 `stella`、`tide` 或服务默认音色；打断关闭旧连接，新问题使用新连接，按句段完成播放后提交文字。具体配置、采样率和确认边界见 [DeepSeek 语音接入](docs/deepseek-audio.md)。原有 MiMo、兼容协议及正式配置不自动切换。
 
 ## 电话接听与外呼
 
@@ -104,7 +108,7 @@ pnpm dev
 
 前端开发服务器代理 `/api` 到本机后端。后端环境变量见 [.env.example](.env.example)，程序不自动加载该文件。可通过 `LLMAUTOTEL_HOST`、`LLMAUTOTEL_PORT`、`LLMAUTOTEL_DATA_DIR` 和 `LLMAUTOTEL_CONNECTION_TIMEOUT_SECONDS` 调整运行配置。跨网络网页语音可设置 `LLMAUTOTEL_ICE_SERVERS`，默认无外部中继，配置与服务端部署见 [服务器部署](docs/server-deployment.md)。前端代理与 REST 超时见 [前端说明](frontend/README.md)。模型参数在网页填写。
 
-语音业务位于 `src/llmautotel/voice.py`，生成背景保留位于 `conversation.py`，内部标记过滤位于 `speech.py`，挽留与挂断工具位于 `hangup.py`，连接和会话管理位于 `sessions.py`，首音耗时映射位于 `latency.py`，三个模型协议适配位于 `providers.py`，电话 provider 和模型网关位于 `telephony/`。升级 Pipecat 前需核对锁定版本的句级音频和回合结束钩子；原因见 [语音管线文档](docs/voice.md)。
+语音业务位于 `src/llmautotel/voice.py`，生成背景保留位于 `conversation.py`，内部标记过滤位于 `speech.py`，挽留与挂断工具位于 `hangup.py`，连接和会话管理位于 `sessions.py`，首音耗时映射位于 `latency.py`，三个模型协议适配位于 `providers.py`，DeepSeek 双向流式合成位于 `deepseek_tts.py`，电话 provider 和模型网关位于 `telephony/`。升级 Pipecat 前需核对锁定版本的句级音频和回合结束钩子；原因见 [语音管线文档](docs/voice.md)。
 
 ## 验证
 

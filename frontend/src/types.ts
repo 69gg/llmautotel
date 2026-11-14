@@ -1,5 +1,5 @@
 export type ProviderName = 'asr' | 'llm' | 'tts';
-export type AudioProtocol = 'openai' | 'mimo';
+export type AudioProtocol = 'openai' | 'mimo' | 'deepseek';
 export type ThinkingMode = 'enabled' | 'disabled';
 export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'max';
 export type TelephonyProviderName = 'asterisk' | 'freeswitch' | 'aliyun' | 'tencent';
@@ -41,7 +41,7 @@ export interface Settings {
   sales: { style: 'conversational' | 'direct'; goal: string; product_info: string; instructions: string; opening: string };
   asr: ProviderSettings & { protocol: AudioProtocol; language: string };
   llm: ProviderSettings & { thinking: ThinkingMode | null; reasoning_effort: ReasoningEffort | null };
-  tts: ProviderSettings & { protocol: AudioProtocol; voice: string; sample_rate: number; instructions: string };
+  tts: ProviderSettings & { protocol: AudioProtocol; voice: string; sample_rate: number; instructions: string; streaming_input: boolean };
   voice: { vad_start_seconds: number; vad_stop_seconds: number; vad_confidence: number; response_chunking: 'first_clause' | 'sentence'; first_clause_min_chars: number; response_target_ms: number };
   telephony: TelephonySettings;
 }
@@ -154,4 +154,11 @@ export function conversationTitle(settings: Settings): string {
 
 export function conversationConfigured(settings: Settings): boolean {
   return Boolean(activeConversation(settings).product_info.trim()) && (conversationMode(settings) !== 'sales' || Boolean(settings.sales.goal.trim()));
+}
+
+export function voiceModelsConfigured(settings: Settings): boolean {
+  const required = [settings.asr.base_url, settings.llm.base_url, settings.llm.model, settings.tts.base_url];
+  if (settings.asr.protocol !== 'deepseek') required.push(settings.asr.model);
+  if (settings.tts.protocol !== 'deepseek') required.push(settings.tts.model, settings.tts.voice);
+  return required.every(value => Boolean(value.trim()));
 }
