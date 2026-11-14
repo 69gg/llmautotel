@@ -23,7 +23,7 @@ from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.services.llm_service import FunctionCallParams
 
-from llmautotel.models import ConversationMode
+from llmautotel.models import ConversationMode, SalesStyle
 from llmautotel.speech import clean_speech_text
 
 HANGUP_POLICY = (
@@ -44,6 +44,18 @@ HANGUP_POLICY = (
     "价格抱怨、犹豫、沉默，都不能推断为明确拒绝目标行动或结束通话。"
     "用户仍提出问题、要求继续或说不要挂断时不得调用工具。\n"
 )
+
+
+def sales_hangup_policy(style: SalesStyle) -> str:
+    """共用同一挽留次数和结束条件，只替换挽留的表达方式。"""
+    if style == "direct":
+        return HANGUP_POLICY
+    return HANGUP_POLICY.replace(
+        "直接说明一项产品实际价值，结尾用‘考虑 + 配置目标行动 + 吗？’询问意向，"
+        "不调查用途、场景或使用频率。",
+        "先简短接住对方的顾虑，再说明一项资料支持的相关价值，"
+        "最多问一个轻量的下一步意向；不用固定句式，不连续追问，不做需求调查。",
+    )
 
 
 CONSULTATION_HANGUP_POLICY = (
@@ -90,12 +102,14 @@ class HangupController(FrameProcessor):
         on_hangup: Callable[[], Awaitable[None]],
         *,
         mode: ConversationMode = "sales",
+        sales_style: SalesStyle = "direct",
     ) -> None:
         super().__init__()
         self._context = context
         self._activity = activity
         self._on_hangup = on_hangup
         self._mode = mode
+        self._sales_style = sales_style
         self._pending: _ConfirmedUserTurn | None = None
         self._accepted: set[str] = set()
         self._retention: _ConfirmedUserTurn | None = None
@@ -176,9 +190,14 @@ class HangupController(FrameProcessor):
                     "reply": {
                         "type": "string",
                         "description": (
-                            "一次简短温和的挽留：介绍一项产品实际价值，"
-                            "结尾用‘考虑 + 配置目标行动 + 吗？’询问意向。"
-                            "不调查用途、场景或使用频率，不询问是否挂断。"
+                            (
+                                "一次简短温和的挽留：介绍一项产品实际价值，"
+                                "结尾用‘考虑 + 配置目标行动 + 吗？’询问意向。"
+                                if self._sales_style == "direct"
+                                else "一次简短温和的挽留：先接住当前顾虑，再说明一项产品实际价值，"
+                                "最多问一个与配置目标相关的轻量下一步意向，不套用固定结尾。"
+                            )
+                            + "不调查用途、场景或使用频率，不询问是否挂断。"
                             "只询问意向，不承诺代办没有实际工具支持的操作。"
                         ),
                     },

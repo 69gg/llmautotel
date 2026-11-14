@@ -12,7 +12,11 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+SalesStyle = Literal["conversational", "direct"]
+
+
 class SalesSettings(StrictModel):
+    style: SalesStyle = "conversational"
     goal: str = ""
     product_info: str = ""
     instructions: str = ""
@@ -86,6 +90,7 @@ class TTSSettings(ProviderSettings):
     protocol: Literal["openai", "mimo"] = "openai"
     voice: str = ""
     sample_rate: int = Field(default=24000, ge=8000, le=96000)
+    instructions: str = Field(default="", max_length=2000)
 
     @field_validator("sample_rate")
     @classmethod

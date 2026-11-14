@@ -13,6 +13,8 @@ def test_settings_persist_without_exposing_credentials(tmp_path: Path) -> None:
     runtime = RuntimeConfig(data_dir=tmp_path, frontend_dir=tmp_path / "no-frontend")
     payload: dict[str, Any] = AppSettings().model_dump(mode="json")
     payload["sales"]["goal"] = "介绍订阅服务"
+    payload["sales"]["style"] = "conversational"
+    payload["tts"]["instructions"] = "自然亲切，使用短句。"
     for stage in ("asr", "llm", "tts"):
         payload[stage].update(
             base_url=f"http://{stage}.test/v1", model=f"{stage}-model", api_key=f"secret-{stage}"
@@ -35,6 +37,8 @@ def test_settings_persist_without_exposing_credentials(tmp_path: Path) -> None:
     with TestClient(create_app(runtime)) as client:
         saved = client.get("/api/settings").json()
         assert saved["sales"]["goal"] == "介绍订阅服务"
+        assert saved["sales"]["style"] == "conversational"
+        assert saved["tts"]["instructions"] == "自然亲切，使用短句。"
         assert saved["asr"]["api_key_set"]
         public["asr"]["api_key"] = None
         result = client.put("/api/settings", json=public).json()

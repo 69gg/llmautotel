@@ -273,7 +273,7 @@ def _endpoint(config: CloudSettings) -> tuple[str, str]:
 
 def cloud_sales_prompt(settings: AppSettings, provider: CloudProvider) -> str:
     """兼容原函数名，按当前对话模式替换仅适用于 Pipecat 的工具约定。"""
-    from llmautotel.hangup import CONSULTATION_HANGUP_POLICY, HANGUP_POLICY
+    from llmautotel.hangup import CONSULTATION_HANGUP_POLICY, sales_hangup_policy
     from llmautotel.voice import conversation_prompt
 
     policy = (
@@ -300,7 +300,9 @@ def cloud_sales_prompt(settings: AppSettings, provider: CloudProvider) -> str:
             "保留带祝福的告别，不能编造工具参数。未提供该工具时不要假装挂断。\n"
         )
     local_policy = (
-        HANGUP_POLICY if settings.conversation.mode == "sales" else CONSULTATION_HANGUP_POLICY
+        sales_hangup_policy(settings.sales.style)
+        if settings.conversation.mode == "sales"
+        else CONSULTATION_HANGUP_POLICY
     )
     return conversation_prompt(settings).replace(local_policy, policy)
 

@@ -247,7 +247,8 @@ async def test_mimo_asr_failure_is_safe_and_not_retried(failure: str) -> None:
         await service.aclose()
 
 
-async def test_mimo_tts_sdk_request_and_sse_pcm_alignment() -> None:
+@pytest.mark.parametrize("instructions", ["", "像电话交谈一样自然，语气亲切，短句之间稍作停顿。"])
+async def test_mimo_tts_sdk_request_and_sse_pcm_alignment(instructions: str) -> None:
     requests: list[httpx2.Request] = []
     bodies: list[dict[str, Any]] = []
     stream = SSEChunks([
@@ -271,6 +272,7 @@ async def test_mimo_tts_sdk_request_and_sse_pcm_alignment() -> None:
         TTSSettings(
             protocol="mimo", base_url="https://fixture.invalid/custom/v1",
             model="mimo-v2.5-tts", voice="苏打", api_key=SecretStr("fixture-tts-key"),
+            instructions=instructions,
         ),
         mimo_http_client=client,
     )
@@ -282,7 +284,10 @@ async def test_mimo_tts_sdk_request_and_sse_pcm_alignment() -> None:
         assert requests[0].headers["content-type"] == "application/json"
         assert bodies[0] == {
             "model": "mimo-v2.5-tts",
-            "messages": [{"role": "assistant", "content": "您好，先说价格。"}],
+            "messages": (
+                ([{"role": "user", "content": instructions}] if instructions else [])
+                + [{"role": "assistant", "content": "您好，先说价格。"}]
+            ),
             "audio": {"format": "pcm16", "voice": "苏打"},
             "stream": True,
         }

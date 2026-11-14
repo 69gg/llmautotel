@@ -339,9 +339,13 @@ class CompatibleTTSService(TTSService):
 
     async def _audio_chunks(self, text: str) -> AsyncGenerator[bytes, None]:
         if self._mimo_client is not None:
+            messages: list[dict[str, Any]] = []
+            if self._provider_settings.instructions.strip():
+                messages.append({"role": "user", "content": self._provider_settings.instructions})
+            messages.append({"role": "assistant", "content": text})
             async with await self._mimo_client.chat.completions.create(
                 model=self._provider_settings.model,
-                messages=[{"role": "assistant", "content": text}],
+                messages=messages,
                 audio={"format": "pcm16", "voice": self._provider_settings.voice},
                 stream=True,
             ) as stream:
@@ -372,6 +376,8 @@ class CompatibleTTSService(TTSService):
             "voice": self._provider_settings.voice,
             "response_format": "pcm",
         }
+        if self._provider_settings.instructions.strip():
+            payload["instructions"] = self._provider_settings.instructions
         async with self._http_client.stream(
             "POST", self._endpoint, headers=headers, json=payload,
             timeout=self._provider_settings.timeout_seconds,

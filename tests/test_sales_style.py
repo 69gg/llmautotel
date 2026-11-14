@@ -16,6 +16,7 @@ from test_providers import sse_text
 from llmautotel.hangup import HangupController
 from llmautotel.models import AppSettings, LLMSettings
 from llmautotel.providers import CompatibleLLMService
+from llmautotel.telephony.cloud import cloud_sales_prompt
 from llmautotel.voice import sales_prompt
 
 
@@ -41,6 +42,7 @@ async def test_sdk_receives_sales_style_for_configured_goal_and_retention(
         )
 
     settings = AppSettings()
+    settings.sales.style = "direct"
     settings.sales.goal = goal
     settings.sales.product_info = product_info
     settings.sales.instructions = "语气自然，每轮一句话。"
@@ -85,5 +87,63 @@ async def test_sdk_receives_sales_style_for_configured_goal_and_retention(
         assert tools["hang_up"]["parameters"]["properties"]["intent"]["enum"] == [
             "direct_exit", "purchase_refusal",
         ]
+    finally:
+        await service.aclose()
+
+
+@pytest.mark.parametrize("goal", ["邀请到店了解", "订阅资料服务", "预约产品演示"])
+async def test_conversational_style_reaches_sdk_and_retention_without_fixed_pitch(
+    goal: str,
+) -> None:
+    bodies: list[dict[str, Any]] = []
+
+    async def handler(request: httpx2.Request) -> httpx2.Response:
+        bodies.append(json.loads(await request.aread()))
+        return httpx2.Response(
+            200, headers={"content-type": "text/event-stream"},
+            content=sse_text("目前有活动，具体条件以资料为准。") + b"data: [DONE]\n\n",
+        )
+
+    settings = AppSettings()
+    settings.conversation.mode = "sales"
+    settings.sales.goal = goal
+    settings.sales.product_info = "示例产品的基础价格为 100 元。"
+    settings.sales.instructions = "在推进目标确有必要时了解预算，一轮只问一个问题。"
+    context = LLMContext([{"role": "system", "content": sales_prompt(settings)},
+                          {"role": "user", "content": "价格是多少？"}])
+    controller = HangupController(
+        context, SimpleNamespace(generation=0, request_generation=0, user_speaking=False),
+        AsyncMock(), sales_style=settings.sales.style,
+    )
+    context.set_tools(controller.tools())
+    service = CompatibleLLMService(
+        LLMSettings(base_url="https://fixture.invalid/v1", model="controlled-llm",
+                    thinking="disabled", reasoning_effort="high"),
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)),
+    )
+    try:
+        stream = await service.get_chat_completions(context)
+        async with stream:
+            _ = [chunk async for chunk in stream]
+        request = bodies[0]
+        prompt = request["messages"][0]["content"]
+        assert goal in prompt and settings.sales.product_info in prompt
+        assert "口语化销售" in prompt and "不连续盘问" in prompt
+        assert "有效答案" in prompt and "不要先说" in prompt
+        assert "才在相关话题下简短询问预算" in prompt
+        assert "没有实际工具支持" in prompt and "不虚构限时" in prompt
+        assert "最后以‘考虑 + 目标行动" not in prompt
+        assert "结尾用‘考虑 + 配置目标行动" not in prompt
+        assert all(name not in prompt for name in ("ChatGPT", "Plus", "九江", "大众"))
+        tools = {tool["function"]["name"]: tool["function"] for tool in request["tools"]}
+        reply = tools["retain_once"]["parameters"]["properties"]["reply"]["description"]
+        assert "最多问一个" in reply and "不套用固定结尾" in reply
+        assert request["thinking"] == {"type": "disabled"}
+        assert request["reasoning_effort"] == "high"
+        assert "max_tokens" not in request and "max_completion_tokens" not in request
+        for provider in ("aliyun", "tencent"):
+            cloud_prompt = cloud_sales_prompt(settings, provider)
+            assert "口语化销售" in cloud_prompt
+            assert "retain_once" not in cloud_prompt and "hang_up" not in cloud_prompt
     finally:
         await service.aclose()

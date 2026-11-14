@@ -40,7 +40,11 @@ from pipecat.turns.user_turn_strategies import UserTurnStrategies
 from pipecat.workers.runner import WorkerRunner
 
 from llmautotel.conversation import InterruptedResponseContext
-from llmautotel.hangup import CONSULTATION_HANGUP_POLICY, HANGUP_POLICY, HangupController
+from llmautotel.hangup import (
+    CONSULTATION_HANGUP_POLICY,
+    HangupController,
+    sales_hangup_policy,
+)
 from llmautotel.models import AppSettings
 from llmautotel.providers import ProviderServices, create_services
 from llmautotel.speech import SpeechTextGuard
@@ -58,6 +62,31 @@ _CONVERSATION_CONTEXT_POLICY = (
     "可用于理解用户指代，但不能假定用户已听到，也不要自动续讲。"
     "背景标签及管理说明仅供内部使用，绝不能朗读、复述或出现在回复正文中。\n"
     "只依据提供的产品资料介绍事实，不编造价格、优惠、保障或购买结果。\n"
+)
+
+_SPOKEN_DELIVERY_POLICY = (
+    "像真实电话交谈一样口语化，使用小句子和自然停顿。"
+    "首句尽量在 10 到 20 个汉字内给出与当前问题相关的有效答案，随后再补充必要信息；"
+    "不要先说‘收到’、‘让我看看’、‘这个问题问得好’等占位话。"
+    "每轮围绕一个重点，通常一到三句，重要信息分成小句，不照读长段资料。"
+    "可少量使用‘哈’、‘这样’等口语承接，不每句添加语气词，不机械重复。\n"
+)
+
+_CONVERSATIONAL_SALES_POLICY = (
+    "对话采用口语化销售：先直接回应当前问题，再自然说明一项相关价值或优惠。"
+    "不要求每轮以‘考虑购买吗’等固定句式收尾；已有明确问题时先把问题答清楚。"
+    "仅在合适的时机问一个推进下一步的问题，例如方便简短聊聊或何时方便了解，"
+    "下一步必须与配置目标和实际能力一致。"
+    "只有配置明确要求推进某个步骤时，才在相关话题下简短询问预算、"
+    "规格、支付方式或置换等必要条件；已经提供的信息不重复问。"
+    "不要调查用户平时用产品干什么、使用场景、频率、职业或痛点，不连续盘问。"
+    "开场简短说明配置中的身份和联系缘由，直接介绍一项资料支持的价值或活动，"
+    "必要时询问是否方便聊；没有记录依据不得声称对方曾关注、到访或留资。"
+    "价格、优惠、门店位置、适用条件和有效期只按资料说明；"
+    "不虚构限时、最低价、即将售罄或贷款保证。"
+    "不承诺加微信、发资料、预约、转接或成交等没有实际工具支持的动作，"
+    "仅在资料明确提供相应渠道时说明用户可自行使用的下一步。"
+    "拒绝目标行动与直接结束按下方工具规则处理，告别不追加推销。\n"
 )
 
 
@@ -109,9 +138,7 @@ def sales_prompt(settings: AppSettings) -> str:
         "直接介绍一项产品价值并围绕配置目标询问用户意向；"
         "已有用户发言时直接回应用户，不补开场。"
     )
-    return (
-        "你是一名通过语音交流的 AI 销售助手。使用简体中文，自然、礼貌、简洁地对话。\n"
-        "一次只说一到两句，优先回应用户最新的话。不要输出 Markdown、列表或舞台指示。\n"
+    direct_style = (
         "对话采用直接推销：先回答当前问题，再介绍一项资料支持的产品价值，"
         "最后以‘考虑 + 目标行动 + 吗？’的意向问句收尾，"
         "例如‘考虑购买吗？’、‘考虑订阅吗？’、‘考虑预约演示吗？’。"
@@ -122,10 +149,16 @@ def sales_prompt(settings: AppSettings) -> str:
         "不要问‘您平时用它干什么’、‘主要用来学习还是工作’或类似需求调查问题。"
         "用户主动提供需求时可以据此介绍相关价值，不再追问用途。"
         "拒绝目标行动与直接结束按下方工具规则处理，告别不追加推销。\n"
+    )
+    style = direct_style if sales.style == "direct" else _CONVERSATIONAL_SALES_POLICY
+    return (
+        "你是一名通过语音交流的 AI 销售助手。使用简体中文，自然、礼貌、简洁地对话。\n"
+        "优先回应用户最新的话。不要输出 Markdown、列表或舞台指示。\n"
+        f"{_SPOKEN_DELIVERY_POLICY}{style}"
         f"{_CONVERSATION_CONTEXT_POLICY}"
         "首次明确拒绝目标行动时最多温和挽留一次，不持续施压；"
         "再次明确拒绝目标行动或直接要求结束时尊重其意愿，告别后挂断。\n"
-        f"{HANGUP_POLICY}"
+        f"{sales_hangup_policy(sales.style)}"
         f"{opening_rule}\n\n"
         f"销售目标：\n{sales.goal}\n\n"
         f"产品资料：\n{sales.product_info}\n\n"
@@ -144,6 +177,7 @@ def consultation_prompt(settings: AppSettings) -> str:
     )
     return (
         "你是一名通过语音接待来电的 AI 产品咨询助手。使用简体中文，自然、礼貌、简洁地对话。\n"
+        f"{_SPOKEN_DELIVERY_POLICY}"
         "围绕用户当前问题介绍产品功能、使用方法、价格和服务信息。"
         "先给直接答案，一次只说一到两句；操作步骤按用户需要分次讲解。"
         "不要输出 Markdown、列表或舞台指示。\n"
@@ -285,6 +319,7 @@ class VoiceSession:
                 conversation,
                 self._hang_up_after_goodbye,
                 mode=self._settings.conversation.mode,
+                sales_style=self._settings.sales.style,
             )
             context.set_tools(hangup.tools())
             user, assistant = LLMContextAggregatorPair(
