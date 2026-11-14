@@ -14,7 +14,7 @@ from uuid import uuid4
 from aiortc import RTCIceServer
 from fastapi import HTTPException
 
-from llmautotel.models import AppSettings, CallRecord, TranscriptEntry
+from llmautotel.models import AppSettings, CallRecord, TranscriptEntry, TurnLatency
 from llmautotel.store import Store
 from llmautotel.telephony.incoming import IncomingCall
 from llmautotel.telephony.settings import TelephonyProviderName
@@ -377,12 +377,19 @@ class SessionManager:
         async def on_error(message: str) -> None:
             active.error = message
 
+        async def on_latency(entry: TurnLatency) -> None:
+            async with self._lock:
+                if self._active is not active:
+                    return
+                active.record.latencies.append(entry)
+                await self.store.save_call(active.record)
+
         reason = "disconnected"
         try:
             async with self._lock:
                 if self._active is not active or active.closing:
                     return
-            callbacks = VoiceCallbacks(on_state, on_message, on_error)
+            callbacks = VoiceCallbacks(on_state, on_message, on_error, on_latency)
             if active.incoming is not None:
                 active.voice = self._incoming_factory(
                     active.incoming, active.record.id, active.settings, callbacks

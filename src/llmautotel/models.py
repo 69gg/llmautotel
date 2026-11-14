@@ -102,8 +102,11 @@ class TTSSettings(ProviderSettings):
 
 class VoiceSettings(StrictModel):
     vad_start_seconds: float = Field(default=0.1, ge=0.05, le=1)
-    vad_stop_seconds: float = Field(default=0.6, ge=0.2, le=3)
+    vad_stop_seconds: float = Field(default=0.3, ge=0.2, le=3)
     vad_confidence: float = Field(default=0.7, gt=0, lt=1)
+    response_chunking: Literal["first_clause", "sentence"] = "first_clause"
+    first_clause_min_chars: int = Field(default=8, ge=4, le=40)
+    response_target_ms: int = Field(default=1000, ge=100, le=10000)
 
 
 class AppSettings(StrictModel):
@@ -170,6 +173,20 @@ class TranscriptEntry(StrictModel):
     interrupted: bool = False
 
 
+class LatencyPart(StrictModel):
+    stage: str
+    duration_ms: float = Field(ge=0)
+
+
+class TurnLatency(StrictModel):
+    sequence: int = Field(ge=1)
+    kind: Literal["opening", "reply"]
+    timestamp: str
+    total_ms: float = Field(ge=0)
+    target_ms: int = Field(ge=100)
+    parts: list[LatencyPart] = Field(default_factory=list)
+
+
 class CallRecord(StrictModel):
     id: str
     started_at: str
@@ -178,6 +195,7 @@ class CallRecord(StrictModel):
     end_reason: str | None = None
     settings: dict[str, Any]
     transcript: list[TranscriptEntry] = Field(default_factory=list)
+    latencies: list[TurnLatency] = Field(default_factory=list)
     channel: Literal["browser", "telephone"] = "browser"
     direction: Literal["inbound", "outbound"] | None = None
     caller: str | None = None

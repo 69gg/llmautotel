@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+
 from pipecat.frames.frames import (
     CancelFrame,
     EndFrame,
@@ -13,10 +15,52 @@ from pipecat.frames.frames import (
     TTSSpeakFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
-from pipecat.utils.text.base_text_aggregator import AggregationType
+from pipecat.utils.text.base_text_aggregator import Aggregation, AggregationType
 from pipecat.utils.text.pattern_pair_aggregator import MatchAction, PatternPairAggregator
+from pipecat.utils.text.simple_text_aggregator import SimpleTextAggregator
 
 from llmautotel.conversation import INTERRUPTED_BACKGROUND_LABEL
+
+
+class FirstClauseTextAggregator(SimpleTextAggregator):
+    """首段在足够长的中文分句处提前合成，其后沿用句级聚合。
+
+    不按任意字数截断，也不把英文逗号、小数点或型号内部当作短句边界。
+    完整中文句末无需等待下一词；其余语言复用 Pipecat 的分句器。
+    """
+
+    def __init__(self, min_chars: int) -> None:
+        super().__init__(language="zh")
+        self._min_chars = min_chars
+        self._first_pending = True
+
+    async def aggregate(self, text: str) -> AsyncIterator[Aggregation]:
+        for character in text:
+            async for result in super().aggregate(character):
+                self._first_pending = False
+                yield result
+            if character in "。！？" or (
+                self._first_pending
+                and character in "，；"
+                and len(self.text.text.strip()) >= self._min_chars
+            ):
+                result = await self.flush()
+                if result is not None:
+                    self._first_pending = False
+                    yield result
+
+    async def flush(self) -> Aggregation | None:
+        result = await super().flush()
+        self._first_pending = True
+        return result
+
+    async def reset(self) -> None:
+        await super().reset()
+        self._first_pending = True
+
+    async def handle_interruption(self) -> None:
+        await super().handle_interruption()
+        self._first_pending = True
 
 
 def _speech_aggregator() -> PatternPairAggregator:

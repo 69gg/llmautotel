@@ -18,6 +18,7 @@ from pipecat.frames.frames import (
 )
 from pipecat.observers.error_observer import ErrorEvent, ErrorObserver
 from pipecat.observers.speaking_observer import SpeakingObserver, SpeechEvent, SpeechEventKind
+from pipecat.observers.user_bot_latency_observer import LatencyBreakdown, UserBotLatencyObserver
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.worker import PipelineParams, PipelineWorker
 from pipecat.processors.aggregators.llm_context import LLMContext
@@ -28,6 +29,7 @@ from pipecat.processors.aggregators.llm_response_universal import (
     LLMUserAggregatorParams,
     UserTurnStoppedMessage,
 )
+from pipecat.processors.aggregators.llm_text_processor import LLMTextProcessor
 from pipecat.processors.frameworks.rtvi import RTVIObserverParams, RTVIProcessor
 from pipecat.transports.base_transport import BaseTransport, TransportParams
 from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
@@ -45,9 +47,10 @@ from llmautotel.hangup import (
     HangupController,
     sales_hangup_policy,
 )
-from llmautotel.models import AppSettings
+from llmautotel.latency import turn_latency
+from llmautotel.models import AppSettings, TurnLatency
 from llmautotel.providers import ProviderServices, create_services
-from llmautotel.speech import SpeechTextGuard
+from llmautotel.speech import FirstClauseTextAggregator, SpeechTextGuard
 
 TranscriptRole = Literal["user", "assistant"]
 
@@ -97,6 +100,7 @@ class VoiceCallbacks:
     on_state: Callable[[str], Awaitable[None]]
     on_message: Callable[[TranscriptRole, str, bool, str], Awaitable[None]]
     on_error: Callable[[str], Awaitable[None]]
+    on_latency: Callable[[TurnLatency], Awaitable[None]] | None = None
 
 
 class FinalTranscriptUserTurnStopStrategy(SpeechTimeoutUserTurnStopStrategy):
@@ -346,6 +350,19 @@ class VoiceSession:
             self._user_aggregator = user
             errors = ErrorObserver()
             speaking = SpeakingObserver()
+            latency = UserBotLatencyObserver()
+            latency_sequence = 0
+            text_processors = (
+                [
+                    LLMTextProcessor(
+                        text_aggregator=FirstClauseTextAggregator(
+                            self._settings.voice.first_clause_min_chars
+                        )
+                    )
+                ]
+                if self._settings.voice.response_chunking == "first_clause"
+                else []
+            )
             pipeline = Pipeline(
                 [
                     transport.input(),
@@ -355,6 +372,7 @@ class VoiceSession:
                     self._services.llm,
                     SpeechTextGuard(),
                     conversation.generated(),
+                    *text_processors,
                     self._services.tts,
                     transport.output(),
                     conversation.output(),
@@ -367,8 +385,9 @@ class VoiceSession:
                 params=PipelineParams(
                     audio_in_sample_rate=16000,
                     audio_out_sample_rate=self._settings.tts.sample_rate,
+                    enable_metrics=True,
                 ),
-                observers=[errors, speaking],
+                observers=[errors, speaking, latency],
                 # 不向客户端输出模型收到的上下文或内部日志。
                 rtvi_observer_params=RTVIObserverParams(
                     user_llm_enabled=False, system_logs_enabled=False, metrics_enabled=False
@@ -376,6 +395,26 @@ class VoiceSession:
                 idle_timeout_secs=None,
             )
             self._worker = worker
+
+            @latency.event_handler("on_latency_breakdown")
+            async def on_latency_breakdown(
+                observer: UserBotLatencyObserver, breakdown: LatencyBreakdown
+            ) -> None:
+                nonlocal latency_sequence
+                entry = turn_latency(
+                    breakdown,
+                    sequence=latency_sequence + 1,
+                    target_ms=self._settings.voice.response_target_ms,
+                )
+                if entry is None:
+                    return
+                latency_sequence += 1
+                if self._callbacks.on_latency is not None:
+                    await self._callbacks.on_latency(entry)
+                await worker.rtvi.send_server_message(
+                    {"type": "latency", "entry": entry.model_dump(mode="json")}
+                )
+
             if self._transport is None:
                 worker.rtvi.add_event_handler("on_client_ready", self._open_conversation)
             else:

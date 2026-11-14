@@ -19,7 +19,7 @@ from test_voice import ControlledLLM, ControlledTTS, FixtureServices, LocalTrans
 from test_voice import Recorder as VoiceRecorder
 
 import llmautotel.voice as voice_module
-from llmautotel.models import AppSettings
+from llmautotel.models import AppSettings, TurnLatency
 from llmautotel.sessions import SessionManager, VoiceRuntime
 from llmautotel.store import Store
 from llmautotel.voice import VoiceCallbacks, VoiceSession
@@ -201,13 +201,24 @@ async def test_new_call_is_not_overwritten_by_previous_hangup_or_callbacks(tmp_p
     manager, store, handlers = await manager_with_fixture(tmp_path, factory)
     first_id = await connect(manager)
     old_voice = await wait_instance(factory)
+    latency = TurnLatency(
+        sequence=1,
+        kind="reply",
+        timestamp="2026-11-14T00:00:01Z",
+        total_ms=1400,
+        target_ms=1000,
+    )
+    assert old_voice.callbacks.on_latency is not None
+    await old_voice.callbacks.on_latency(latency)
     old_voice.finish_allowed.set()
     first_record = await manager.end(first_id)
+    assert first_record.latencies == [latency]
     second = await manager.start()
     second_id = second["call"]["id"]
     try:
         assert second_id != first_id
         await old_voice.callbacks.on_state("speaking")
+        await old_voice.callbacks.on_latency(latency.model_copy(update={"sequence": 2}))
         await old_voice.callbacks.on_message(
             "assistant", "旧通话的迟到内容。", True, "2026-10-04T09:02:00Z"
         )
@@ -215,6 +226,7 @@ async def test_new_call_is_not_overwritten_by_previous_hangup_or_callbacks(tmp_p
         active = await manager.active_record()
         assert active is not None and active.id == second_id
         assert active.status == "connecting" and active.transcript == []
+        assert active.latencies == []
         assert repeated == first_record
         assert await store.get_call(first_id) == first_record
         assert handlers[0].closed and not handlers[1].closed

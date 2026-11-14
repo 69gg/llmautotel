@@ -15,6 +15,12 @@ def test_settings_persist_without_exposing_credentials(tmp_path: Path) -> None:
     payload["sales"]["goal"] = "介绍订阅服务"
     payload["sales"]["style"] = "conversational"
     payload["tts"]["instructions"] = "自然亲切，使用短句。"
+    payload["voice"].update(
+        vad_stop_seconds=0.25,
+        response_chunking="sentence",
+        first_clause_min_chars=12,
+        response_target_ms=900,
+    )
     for stage in ("asr", "llm", "tts"):
         payload[stage].update(
             base_url=f"http://{stage}.test/v1", model=f"{stage}-model", api_key=f"secret-{stage}"
@@ -39,6 +45,7 @@ def test_settings_persist_without_exposing_credentials(tmp_path: Path) -> None:
         assert saved["sales"]["goal"] == "介绍订阅服务"
         assert saved["sales"]["style"] == "conversational"
         assert saved["tts"]["instructions"] == "自然亲切，使用短句。"
+        assert saved["voice"] == payload["voice"]
         assert saved["asr"]["api_key_set"]
         public["asr"]["api_key"] = None
         result = client.put("/api/settings", json=public).json()

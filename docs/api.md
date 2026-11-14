@@ -23,7 +23,7 @@
 | POST | `/offer?call_id={id}` | SmallWebRTC SDP offer/answer |
 | PATCH | `/offer?call_id={id}` | SmallWebRTC trickle ICE 候选 |
 
-配置包含 `conversation.mode`（`consultation` 默认或 `sales`）、`consultation`（`product_info`、`instructions`、`opening`）、旧 `sales`（`goal`、`product_info`、`instructions`、`opening`）、`asr`、`llm`、`tts`、`voice` 和 `telephony`。两组对话资料独立保留。旧无模式的保存配置升级为咨询，复制产品资料，销售原组不变；省略对话分组保存时保留当前值。模型公共字段为 `base_url`、`model`、`timeout_seconds`。ASR 增加 `language`；TTS 增加 `voice`、`sample_rate`。语音配置为 `vad_start_seconds`、`vad_stop_seconds`、`vad_confidence`。
+配置包含 `conversation.mode`（`consultation` 默认或 `sales`）、`consultation`（`product_info`、`instructions`、`opening`）、旧 `sales`（`style`、`goal`、`product_info`、`instructions`、`opening`）、`asr`、`llm`、`tts`、`voice` 和 `telephony`。两组对话资料独立保留。旧无模式的保存配置升级为咨询，复制产品资料，销售原组不变；省略对话分组保存时保留当前值。模型公共字段为 `base_url`、`model`、`timeout_seconds`。ASR 增加 `language`；TTS 增加 `voice`、`sample_rate`、可选语气 `instructions`。销售 `style` 为 `conversational`（默认）或 `direct`。语音配置为 `vad_start_seconds`、`vad_stop_seconds`、`vad_confidence`、`response_chunking`（`first_clause` 默认或 `sentence`）、`first_clause_min_chars`（4–40，默认 8）、`response_target_ms`（100–10000，默认 1000）。新配置静音默认 0.3 秒，已存阈值保留。
 ASR / TTS 还可设置 `protocol` 为 `openai`（默认）或 `mimo`；MiMo ASR 语言为 `auto/zh/en`，MiMo TTS 采样率须为 24000。LLM 的可选 `thinking` 为 `enabled/disabled/null`，`reasoning_effort` 为 `none/low/medium/high/max/null`；`null` 表示省略参数并使用服务默认。应用不设置 token 输出上限。
 
 保存模型密钥时：省略 `api_key` 表示保持原值，字符串表示替换，`null` 表示清除。保存时不要携带只读字段 `api_key_set`。配置允许暂存空字段；开始通话前检查必要配置。
@@ -66,3 +66,9 @@ API 根地址必须使用 HTTP / HTTPS、有效端口，不包含 URL 凭据、�
 本机管理接口没有账号系统，云平台的公共入口只将上述认证模型网关、入呼路由及回执入口交给公网 HTTPS 反向代理，配置、控制、接听状态、历史和 WebRTC 留在本机或受保护的管理入口。不要将整个 `/api` 无鉴权公开转发。默认仍监听 `127.0.0.1`。
 
 管理员需要公网网页入口时，可使用独立 IP HTTPS 站点，对所有网页、静态资源和整个 `/api` 加 Nginx Basic Auth；匿名／错误凭据返回 401，其他浏览器 Origin 返回 403。入口 Authorization 不转发给应用，管理密码与模型及云网关凭据独立。浏览器登录后可正常同源调用 REST 和 WebRTC 信令；该站点不作为云平台的回调入口。配置见 [服务器部署](server-deployment.md)。
+
+## 服务端逐轮耗时
+
+详细记录和摘要的 `latencies` 默认为空数组，旧历史可直接读取。每项包含 `sequence`、`kind`（`opening/reply`）、`timestamp`、`total_ms`、`target_ms` 和 `parts`（`stage/duration_ms`）。浏览器实时事件为 `{type:"latency",entry:...}`。阶段使用 Pipecat 的稳定键，如 `endpointing_wait`、`transcription`、`llm_inference`、`speech_synthesis`、`output_transport`、`pipeline`；可能包含工具、回合判断或分句耗时。只写耗时，不写模型上下文或密钥。
+
+开场与回复分开，未输出的回合不记录零耗时。范围仅到服务端开始输出；正常回复目标最终按用户停口到终端首段有效语音验收，不能把这个统计当作设备已达标。云托管平台没有相同媒体事件，保持空数组。配置和测量边界见 [语音管线](voice.md)。

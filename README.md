@@ -104,7 +104,7 @@ pnpm dev
 
 前端开发服务器代理 `/api` 到本机后端。后端环境变量见 [.env.example](.env.example)，程序不自动加载该文件。可通过 `LLMAUTOTEL_HOST`、`LLMAUTOTEL_PORT`、`LLMAUTOTEL_DATA_DIR` 和 `LLMAUTOTEL_CONNECTION_TIMEOUT_SECONDS` 调整运行配置。跨网络网页语音可设置 `LLMAUTOTEL_ICE_SERVERS`，默认无外部中继，配置与服务端部署见 [服务器部署](docs/server-deployment.md)。前端代理与 REST 超时见 [前端说明](frontend/README.md)。模型参数在网页填写。
 
-语音业务位于 `src/llmautotel/voice.py`，生成背景保留位于 `conversation.py`，内部标记过滤位于 `speech.py`，挽留与挂断工具位于 `hangup.py`，连接和会话管理位于 `sessions.py`，三个模型协议适配位于 `providers.py`，电话 provider 和模型网关位于 `telephony/`。升级 Pipecat 前需核对锁定版本的句级音频和回合结束钩子；原因见 [语音管线文档](docs/voice.md)。
+语音业务位于 `src/llmautotel/voice.py`，生成背景保留位于 `conversation.py`，内部标记过滤位于 `speech.py`，挽留与挂断工具位于 `hangup.py`，连接和会话管理位于 `sessions.py`，首音耗时映射位于 `latency.py`，三个模型协议适配位于 `providers.py`，电话 provider 和模型网关位于 `telephony/`。升级 Pipecat 前需核对锁定版本的句级音频和回合结束钩子；原因见 [语音管线文档](docs/voice.md)。
 
 ## 验证
 
@@ -116,3 +116,5 @@ pnpm --dir frontend build
 ```
 
 测试分为协议、管线、真实 WebRTC 传输和前端生命周期。自动化、浏览器检查以及待完成的真实模型与设备体验分别记录在 [验收记录](docs/acceptance.md)，接口见 [API 文档](docs/api.md)。
+
+低延迟模式支持首段中文分句提前合成，保留旧版整句模式。服务端逐轮首音耗时随历史保存；最终 1 秒目标按用户停口到终端首段有效语音验收，详见 [语音管线](docs/voice.md)。
