@@ -160,10 +160,21 @@ async def test_mimo_asr_sdk_sends_chat_wav_data_url_and_configured_language(
 
 
 @pytest.mark.parametrize("text", ["我想了解计划。", " "])
-async def test_mimo_real_segmented_stt_emits_final_even_when_empty(text: str) -> None:
+@pytest.mark.parametrize("protocol", ["mimo", "deepseek"])
+async def test_audio_real_segmented_stt_emits_final_even_when_empty(
+    text: str,
+    protocol: str,
+) -> None:
     uploads: list[bytes] = []
 
     async def handler(request: httpx2.Request) -> httpx2.Response:
+        if protocol == "deepseek":
+            from test_providers import multipart_parts
+
+            parts = multipart_parts(request.headers["content-type"], await request.aread())
+            assert set(parts) == {"file"}
+            uploads.append(parts["file"])
+            return httpx2.Response(200, json={"text": text})
         body = json.loads(await request.aread())
         encoded = body["messages"][0]["content"][0]["input_audio"]["data"].split(",", 1)[1]
         uploads.append(base64.b64decode(encoded, validate=True))
@@ -172,8 +183,10 @@ async def test_mimo_real_segmented_stt_emits_final_even_when_empty(text: str) ->
     client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
     service = CompatibleSTTService(
         ASRSettings(
-            protocol="mimo", base_url="http://fixture.invalid/v1",
-            model="mimo-v2.5-asr", language="auto",
+            protocol=protocol,
+            base_url="http://fixture.invalid/v1",
+            model="mimo-v2.5-asr",
+            language="auto",
         ),
         http_client=client,
     )
@@ -190,18 +203,22 @@ async def test_mimo_real_segmented_stt_emits_final_even_when_empty(text: str) ->
     task = asyncio.create_task(runner.run())
     try:
         await asyncio.wait_for(collector.started.wait(), timeout=3)
-        await worker.queue_frames([
-            VADUserStartedSpeakingFrame(),
-            InputAudioRawFrame(b"\x01\x00" * 160, 16000, 1),
-            VADUserStoppedSpeakingFrame(stop_secs=0.6),
-        ])
+        await worker.queue_frames(
+            [
+                VADUserStartedSpeakingFrame(),
+                InputAudioRawFrame(b"\x01\x00" * 160, 16000, 1),
+                VADUserStoppedSpeakingFrame(stop_secs=0.6),
+            ]
+        )
         await asyncio.wait_for(collector.received.wait(), timeout=3)
         assert len(collector.transcripts) == len(uploads) == 1
         assert collector.transcripts[0].text == text.strip()
         assert collector.transcripts[0].finalized is True
         with wave.open(io.BytesIO(uploads[0]), "rb") as audio:
             assert (audio.getnchannels(), audio.getsampwidth(), audio.getframerate()) == (
-                1, 2, 16000,
+                1,
+                2,
+                16000,
             )
             assert audio.readframes(160) == b"\x01\x00" * 160
         await worker.queue_frame(EndFrame())

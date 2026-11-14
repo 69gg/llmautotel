@@ -1,7 +1,7 @@
 # 模型接入与协议边界
 
 ASR、文本 LLM 和 TTS 使用各自独立的地址、模型、密钥和请求超时。
-ASR / TTS 可以分别选择 `openai` 兼容协议或 `mimo` 协议；地址与模型仍由配置提供，不按地址或模型名猜测协议。旧配置默认继续使用 `openai`。
+ASR / TTS 可以分别选择 `openai` 兼容协议、`mimo` 或 `deepseek` 协议；不按地址或模型名猜测协议。旧配置默认继续使用 `openai`。DeepSeek 工具接口与限制见 [DeepSeek 语音接入](deepseek-audio.md)。
 API 地址填写服务商兼容接口的根地址，例如服务部署在 `/v1` 下时保留该路径；
 不要填写完整的 `/audio/speech` 或 `/chat/completions` 路径。
 应用不预填服务商地址、模型或密钥。无鉴权的本机服务可留空密钥，

@@ -61,7 +61,7 @@ class ProviderSettings(StrictModel):
 
 
 class ASRSettings(ProviderSettings):
-    protocol: Literal["openai", "mimo"] = "openai"
+    protocol: Literal["openai", "mimo", "deepseek"] = "openai"
     language: str = "zh"
 
     @field_validator("language")
@@ -70,6 +70,8 @@ class ASRSettings(ProviderSettings):
         from pipecat.transcriptions.language import Language
 
         value = value.strip()
+        if info.data.get("protocol") == "deepseek" and value == "auto":
+            return value
         if info.data.get("protocol") == "mimo":
             if value not in {"auto", "zh", "en"}:
                 raise ValueError("MiMo 识别语言须为 auto、zh 或 en")
@@ -87,7 +89,7 @@ class LLMSettings(ProviderSettings):
 
 
 class TTSSettings(ProviderSettings):
-    protocol: Literal["openai", "mimo"] = "openai"
+    protocol: Literal["openai", "mimo", "deepseek"] = "openai"
     voice: str = ""
     sample_rate: int = Field(default=24000, ge=8000, le=96000)
     instructions: str = Field(default="", max_length=2000)
@@ -95,8 +97,15 @@ class TTSSettings(ProviderSettings):
     @field_validator("sample_rate")
     @classmethod
     def validate_sample_rate(cls, value: int, info: ValidationInfo) -> int:
-        if info.data.get("protocol") == "mimo" and value != 24000:
-            raise ValueError("MiMo PCM 输出采样率须为 24000 Hz")
+        if info.data.get("protocol") in {"mimo", "deepseek"} and value != 24000:
+            raise ValueError("MiMo 和 DeepSeek PCM 输出采样率须为 24000 Hz")
+        return value
+
+    @field_validator("voice")
+    @classmethod
+    def validate_voice(cls, value: str, info: ValidationInfo) -> str:
+        if info.data.get("protocol") == "deepseek" and value not in {"", "stella", "tide"}:
+            raise ValueError("DeepSeek 音色须为 stella、tide 或留空使用服务默认")
         return value
 
 
@@ -159,9 +168,9 @@ class AppSettings(StrictModel):
             provider = getattr(self, stage)
             if not provider.base_url:
                 missing.append(f"{label} API 地址")
-            if not provider.model.strip():
+            if getattr(provider, "protocol", None) != "deepseek" and not provider.model.strip():
                 missing.append(f"{label} 模型")
-        if not self.tts.voice.strip():
+        if self.tts.protocol != "deepseek" and not self.tts.voice.strip():
             missing.append("TTS 音色")
         return missing
 

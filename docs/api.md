@@ -24,14 +24,14 @@
 | PATCH | `/offer?call_id={id}` | SmallWebRTC trickle ICE 候选 |
 
 配置包含 `conversation.mode`（`consultation` 默认或 `sales`）、`consultation`（`product_info`、`instructions`、`opening`）、旧 `sales`（`style`、`goal`、`product_info`、`instructions`、`opening`）、`asr`、`llm`、`tts`、`voice` 和 `telephony`。两组对话资料独立保留。旧无模式的保存配置升级为咨询，复制产品资料，销售原组不变；省略对话分组保存时保留当前值。模型公共字段为 `base_url`、`model`、`timeout_seconds`。ASR 增加 `language`；TTS 增加 `voice`、`sample_rate`、可选语气 `instructions`。销售 `style` 为 `conversational`（默认）或 `direct`。语音配置为 `vad_start_seconds`、`vad_stop_seconds`、`vad_confidence`、`response_chunking`（`first_clause` 默认或 `sentence`）、`first_clause_min_chars`（4–40，默认 8）、`response_target_ms`（100–10000，默认 1000）。新配置静音默认 0.3 秒，已存阈值保留。
-ASR / TTS 还可设置 `protocol` 为 `openai`（默认）或 `mimo`；MiMo ASR 语言为 `auto/zh/en`，MiMo TTS 采样率须为 24000。LLM 的可选 `thinking` 为 `enabled/disabled/null`，`reasoning_effort` 为 `none/low/medium/high/max/null`；`null` 表示省略参数并使用服务默认。应用不设置 token 输出上限。
+ASR / TTS 还可设置 `protocol` 为 `openai`（默认）、`mimo` 或 `deepseek`；MiMo ASR 语言为 `auto/zh/en`，MiMo 和 DeepSeek TTS 采样率须为 24000。DeepSeek 工具接口不需要模型名，ASR 不发送语言；TTS 音色只接受 `stella/tide` 或空值（服务默认），不发送 `instructions`。LLM 的可选 `thinking` 为 `enabled/disabled/null`，`reasoning_effort` 为 `none/low/medium/high/max/null`；`null` 表示省略参数并使用服务默认。应用不设置 token 输出上限。
 
 保存模型密钥时：省略 `api_key` 表示保持原值，字符串表示替换，`null` 表示清除。保存时不要携带只读字段 `api_key_set`。配置允许暂存空字段；开始通话前检查必要配置。
 
 校验错误返回 HTTP 422，`detail` 列表仅包含字段位置、错误类型与说明，不回显输入值。
 API 根地址必须使用 HTTP / HTTPS、有效端口，不包含 URL 凭据、查询参数或片段；ASR 语言使用 Pipecat 支持的语言代码。
 
-开始原生／网页会话前要求当前模式的产品资料（销售额外要求目标）、三个服务地址与模型名，以及 TTS 音色。云托管模式只要求本机 LLM 及当前模式资料，平台负责 ASR／TTS。密钥允许留空以接入无鉴权的本机服务。网页、外呼与来电共用一通限制，竞争返回 HTTP 409；原生来电忙线拒接，云拒接格式见下文。新配置只影响下一通。POST `/calls` 返回的 `connection` 可交给 Pipecat SDK `connect()`；默认无外部 ICE 服务器。运行环境的 `LLMAUTOTEL_ICE_SERVERS` 可设置 STUN／TURN，后端及 `connection.iceConfig.iceServers` 使用同一配置。中继密码仅用于本次协商，不写入 `call`、历史或配置回读；浏览器建立连接需要收到该密码。详情见 [服务器部署](server-deployment.md)。
+开始原生／网页会话前要求当前模式的产品资料（销售额外要求目标）、三个服务地址、非 DeepSeek 音频接口的模型名，以及非 DeepSeek TTS 的音色。云托管模式只要求本机 LLM 及当前模式资料，平台负责 ASR／TTS。密钥允许留空以接入无鉴权的本机服务。网页、外呼与来电共用一通限制，竞争返回 HTTP 409；原生来电忙线拒接，云拒接格式见下文。新配置只影响下一通。POST `/calls` 返回的 `connection` 可交给 Pipecat SDK `connect()`；默认无外部 ICE 服务器。运行环境的 `LLMAUTOTEL_ICE_SERVERS` 可设置 STUN／TURN，后端及 `connection.iceConfig.iceServers` 使用同一配置。中继密码仅用于本次协商，不写入 `call`、历史或配置回读；浏览器建立连接需要收到该密码。详情见 [服务器部署](server-deployment.md)。
 
 结束接口可省略 body，默认原因为 `user_hangup`；也可发送 `{ "reason": "connection_lost" }`。已有结束原因不被后到请求覆盖。SDK 状态与已提交文字通过 RTVI 数据通道同步，见 [语音管线](voice.md)。
 

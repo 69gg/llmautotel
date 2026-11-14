@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import base64
+import io
+import wave
 from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
 from contextlib import aclosing
 from dataclasses import dataclass
@@ -109,6 +111,19 @@ class CompatibleSTTService(OpenAISTTService):
 
     async def _transcribe(self, audio: bytes) -> Transcription:
         try:
+            if self._provider_settings.protocol == "deepseek":
+                if len(audio) > 8 * 1024 * 1024:
+                    raise ValueError("ASR audio exceeds the protocol limit")
+                with wave.open(io.BytesIO(audio), "rb") as source:
+                    if source.getnframes() / source.getframerate() > 120:
+                        raise ValueError("ASR audio exceeds the duration limit")
+                # DeepSeek 工具 API 没有 model 或 language 字段，语种自动识别。
+                return await self._client.post(
+                    "/tools/asr",
+                    cast_to=Transcription,
+                    files={"file": ("audio.wav", audio, "audio/wav")},
+                    options={"headers": {"Content-Type": "multipart/form-data"}},
+                )
             if self._provider_settings.protocol == "mimo":
                 encoded = base64.b64encode(audio).decode("ascii")
                 # MiMo 的限制针对编码后的输入，不将超大片段发送给服务端。
@@ -231,13 +246,12 @@ class CompatibleLLMService(OpenAILLMService):
                         ),
                     }
                 break
-            params["messages"] = projected + [{
-                **messages[-1],
-                "content": (
-                    "当前用户发言，请直接回答这一条：\n"
-                    f"{messages[-1]['content']}"
-                ),
-            }]
+            params["messages"] = projected + [
+                {
+                    **messages[-1],
+                    "content": (f"当前用户发言，请直接回答这一条：\n{messages[-1]['content']}"),
+                }
+            ]
             return params
         start = len(messages)
         while start and messages[start - 1].get("role") == "user":
@@ -301,7 +315,7 @@ class CompatibleTTSService(TTSService):
         self._provider_settings = settings.model_copy(deep=True)
         self._http_client = (
             http_client or httpx.AsyncClient(timeout=settings.timeout_seconds)
-            if settings.protocol == "openai"
+            if settings.protocol in {"openai", "deepseek"}
             else None
         )
         self._mimo_client = (
@@ -315,7 +329,8 @@ class CompatibleTTSService(TTSService):
             if settings.protocol == "mimo"
             else None
         )
-        self._endpoint = f"{settings.base_url.rstrip('/')}/audio/speech"
+        path = "tools/tts" if settings.protocol == "deepseek" else "audio/speech"
+        self._endpoint = f"{settings.base_url.rstrip('/')}/{path}"
 
     async def _push_tts_frames(
         self,
@@ -370,16 +385,24 @@ class CompatibleTTSService(TTSService):
             if _key(self._provider_settings)
             else {}
         )
-        payload = {
-            "input": text,
-            "model": self._provider_settings.model,
-            "voice": self._provider_settings.voice,
-            "response_format": "pcm",
-        }
-        if self._provider_settings.instructions.strip():
-            payload["instructions"] = self._provider_settings.instructions
+        if self._provider_settings.protocol == "deepseek":
+            payload = {"text": text, "format": "pcm"}
+            if self._provider_settings.voice:
+                payload["voice_id"] = self._provider_settings.voice
+        else:
+            payload = {
+                "input": text,
+                "model": self._provider_settings.model,
+                "voice": self._provider_settings.voice,
+                "response_format": "pcm",
+            }
+            if self._provider_settings.instructions.strip():
+                payload["instructions"] = self._provider_settings.instructions
         async with self._http_client.stream(
-            "POST", self._endpoint, headers=headers, json=payload,
+            "POST",
+            self._endpoint,
+            headers=headers,
+            json=payload,
             timeout=self._provider_settings.timeout_seconds,
         ) as response:
             response.raise_for_status()
