@@ -93,6 +93,7 @@ class TTSSettings(ProviderSettings):
     voice: str = ""
     sample_rate: int = Field(default=24000, ge=8000, le=96000)
     instructions: str = Field(default="", max_length=2000)
+    streaming_input: bool = True
 
     @field_validator("sample_rate")
     @classmethod

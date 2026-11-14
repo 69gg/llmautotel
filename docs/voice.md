@@ -12,6 +12,8 @@
 
 `voice.response_chunking=first_clause`（新默认）通过官方 `LLMTextProcessor` 和一个 `SimpleTextAggregator` 薄子类预聚合：首段达到 `first_clause_min_chars`（默认 8）且出现中文逗号或分号时即可开始合成，中文完整句末立即释放，不等下一词。后续按整句合成，避免每几个字请求一次 TTS。不会按任意字数切开价格、型号或英文单词；英文逗号和小数点保留原分句器行为。`sentence` 完整保留旧版整句路径。固定开场和工具告别仍按原文输出，打断清空缓冲，下一轮重新启用首段断句；生成稿捕捉位于预聚合之前，仍保留完整未播放背景。
 
+DeepSeek TTS 在 `streaming_input=true` 时直接接收原始 LLM token，跳过前置整句聚合，边输入边输出 PCM；在合成器内复用相同中文断句规则，按独立连接完成句段检查点。固定欢迎和工具回复保持单一完整检查点。官方协议没有逐句音频 ID，因此打断后关闭旧连接，不能在同连接上继续新回复。仅成功完成的句段文字进入输出队列，播放顺序仍由 Pipecat 保证。此处使用锁定版本的 `TTSContext`、音频上下文队列和 TOKEN 钩子；升级依赖须重跑 `tests/test_deepseek_streaming.py`，详见 [DeepSeek 语音](deepseek-audio.md)。
+
 新配置的 VAD 静音默认改为 0.3 秒；已有配置里的值原样保留，较低阈值可能把自然停顿分成多个片段，识别结果仍经过原最终转写屏障。`response_target_ms` 默认 1000，作为测量参照，不通过截断回答、占位话或强制挂断伪造达标。
 
 开启 Pipecat 1.12.0 的指标并复用 `UserBotLatencyObserver`。每次首次输出生成一条 `latencies`，区分 `opening` 与 `reply`，带序号、时间、总毫秒数、开始时目标及官方阶段贡献；通过 RTVI `{type:"latency",entry:...}` 同步并写入本通历史。阶段贡献总和对应总耗时；首段预聚合的等待可能合入合成阶段，不能把它当作供应商单独的 TTS TTFB。没有输出的回合不记为零耗时，开场不算正常回复达标样本；云托管平台缺少本机媒体事件，不伪造该统计。

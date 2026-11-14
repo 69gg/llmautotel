@@ -28,7 +28,7 @@ from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.services.openai.llm import OpenAILLMService
 from pipecat.services.openai.stt import OpenAISTTService
 from pipecat.services.settings import TTSSettings as PipecatTTSSettings
-from pipecat.services.tts_service import TTSService
+from pipecat.services.tts_service import TextAggregationMode, TTSService
 from pipecat.transcriptions.language import Language
 
 from llmautotel.conversation import INTERRUPTED_BACKGROUND_LABEL
@@ -42,8 +42,8 @@ class ProviderFailure(RuntimeError):
 
     def __init__(self, stage: ProviderStage, cause: Exception) -> None:
         status = getattr(cause, "status_code", None)
-        if isinstance(cause, httpx.HTTPStatusError):
-            status = cause.response.status_code
+        if status is None:
+            status = getattr(getattr(cause, "response", None), "status_code", None)
         detail = f"（HTTP {status}）" if isinstance(status, int) else ""
         if isinstance(
             cause, (httpx.TimeoutException, httpx2.TimeoutException, APITimeoutError, TimeoutError)
@@ -302,6 +302,7 @@ class CompatibleTTSService(TTSService):
         *,
         http_client: httpx.AsyncClient | None = None,
         mimo_http_client: httpx2.AsyncClient | None = None,
+        text_aggregation_mode: TextAggregationMode = TextAggregationMode.SENTENCE,
     ) -> None:
         super().__init__(
             settings=PipecatTTSSettings(
@@ -311,6 +312,8 @@ class CompatibleTTSService(TTSService):
             push_start_frame=True,
             push_stop_frames=True,
             reuse_context_id_within_turn=False,
+            text_aggregation_mode=text_aggregation_mode,
+            stop_frame_timeout_s=settings.timeout_seconds + 1,
         )
         self._provider_settings = settings.model_copy(deep=True)
         self._http_client = (
@@ -465,10 +468,19 @@ class ProviderServices:
         await self.tts.aclose()
 
 
+def create_tts_service(settings: AppSettings) -> CompatibleTTSService:
+    """通话和只读基准使用同一语音协议选择。"""
+    if settings.tts.protocol == "deepseek" and settings.tts.streaming_input:
+        from llmautotel.deepseek_tts import DeepSeekStreamingTTSService
+
+        return DeepSeekStreamingTTSService(settings.tts, settings.voice)
+    return CompatibleTTSService(settings.tts)
+
+
 def create_services(settings: AppSettings) -> ProviderServices:
     """Create one independent service/client for each configured model."""
     return ProviderServices(
         stt=CompatibleSTTService(settings.asr),
         llm=CompatibleLLMService(settings.llm),
-        tts=CompatibleTTSService(settings.tts),
+        tts=create_tts_service(settings),
     )

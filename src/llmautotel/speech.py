@@ -22,6 +22,13 @@ from pipecat.utils.text.simple_text_aggregator import SimpleTextAggregator
 from llmautotel.conversation import INTERRUPTED_BACKGROUND_LABEL
 
 
+def chinese_speech_boundary(text: str, character: str, min_chars: int | None) -> bool:
+    """中文句末立即释放；首段可选足够长的中文分句，避免拆开金额。"""
+    return character in "。！？" or (
+        min_chars is not None and character in "，；" and len(text.strip()) >= min_chars
+    )
+
+
 class FirstClauseTextAggregator(SimpleTextAggregator):
     """首段在足够长的中文分句处提前合成，其后沿用句级聚合。
 
@@ -39,10 +46,8 @@ class FirstClauseTextAggregator(SimpleTextAggregator):
             async for result in super().aggregate(character):
                 self._first_pending = False
                 yield result
-            if character in "。！？" or (
-                self._first_pending
-                and character in "，；"
-                and len(self.text.text.strip()) >= self._min_chars
+            if chinese_speech_boundary(
+                self.text.text, character, self._min_chars if self._first_pending else None
             ):
                 result = await self.flush()
                 if result is not None:

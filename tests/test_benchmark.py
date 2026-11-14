@@ -97,7 +97,7 @@ async def test_preparation_failure_is_sanitized_and_closes_the_model_client(
         async def aclose(self) -> None:
             closed.append(True)
 
-    monkeypatch.setattr(benchmark_module, "CompatibleTTSService", FailedTTS)
+    monkeypatch.setattr(benchmark_module, "create_tts_service", FailedTTS)
     with pytest.raises(BenchmarkFailure, match="^question_synthesis_failed$"):
         await synthesize_question(AppSettings(), "功能是什么？", 300)
     assert closed == [True]

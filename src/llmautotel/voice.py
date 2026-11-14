@@ -361,6 +361,9 @@ class VoiceSession:
                     )
                 ]
                 if self._settings.voice.response_chunking == "first_clause"
+                and not (
+                    self._settings.tts.protocol == "deepseek" and self._settings.tts.streaming_input
+                )
                 else []
             )
             pipeline = Pipeline(

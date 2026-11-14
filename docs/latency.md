@@ -48,3 +48,9 @@ uv run python -m llmautotel.benchmark \
 这些是已查证协议能力后的替换方案，本轮未添加未验证的新 provider，也未提供新服务的凭据或真实线路测试结果。供应商的单阶段延迟宣传不等于本项目整条链路达标。
 
 官方资料：[Fun-ASR-Realtime](https://help.aliyun.com/zh/model-studio/fun-asr-real-time-speech-recognition-api-reference)、[Paraformer](https://help.aliyun.com/zh/model-studio/paraformer-real-time-speech-recognition-api-reference)、[CosyVoice WebSocket](https://help.aliyun.com/zh/model-studio/cosyvoice-websocket-api)。
+
+## DeepSeek 流式语音接入
+
+DeepSeek TTS 现已支持 WebSocket 双向流式输入：在整句尚未生成完成时开始请求并接收音频。`tts.protocol=deepseek` 默认启用，`streaming_input=false` 可回退 HTTP 分句；基准与真实通话使用同一工厂选择协议。两条路径都按真实 PCM 统计，不使用占位话。
+
+DeepSeek ASR 官方不支持流式识别，仍需用户停口后上传完整 WAV。这能减少 TTS 侧等待，但无法消除 ASR、LLM、网络和设备延迟；没有成功的完整链路及终端测量前，1 秒目标仍未验收。配置与检查点边界见 [DeepSeek 语音](deepseek-audio.md)。

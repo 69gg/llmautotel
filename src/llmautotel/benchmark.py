@@ -19,7 +19,7 @@ from pipecat.frames.frames import ErrorFrame, TTSAudioRawFrame
 
 from llmautotel.config import RuntimeConfig
 from llmautotel.models import AppSettings, TurnLatency
-from llmautotel.providers import CompatibleTTSService
+from llmautotel.providers import create_tts_service
 from llmautotel.telephony.base import MediaCallbacks
 from llmautotel.telephony.transport import PhoneTransport
 from llmautotel.voice import TranscriptRole, VoiceCallbacks, VoiceSession
@@ -99,7 +99,7 @@ class SampleResult:
 
 
 async def synthesize_question(settings: AppSettings, question: str, threshold: int) -> bytes:
-    service = CompatibleTTSService(settings.tts)
+    service = create_tts_service(settings)
     chunks: list[bytes] = []
     try:
         async for frame in service.run_tts(question, "benchmark-question"):
