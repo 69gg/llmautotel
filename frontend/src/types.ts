@@ -38,11 +38,11 @@ export interface ProviderSettings {
 export interface Settings {
   conversation: { mode: ConversationMode };
   consultation: ConversationConfig;
-  sales: { goal: string; product_info: string; instructions: string; opening: string };
+  sales: { style: 'conversational' | 'direct'; goal: string; product_info: string; instructions: string; opening: string };
   asr: ProviderSettings & { protocol: AudioProtocol; language: string };
   llm: ProviderSettings & { thinking: ThinkingMode | null; reasoning_effort: ReasoningEffort | null };
-  tts: ProviderSettings & { protocol: AudioProtocol; voice: string; sample_rate: number };
-  voice: { vad_start_seconds: number; vad_stop_seconds: number; vad_confidence: number };
+  tts: ProviderSettings & { protocol: AudioProtocol; voice: string; sample_rate: number; instructions: string };
+  voice: { vad_start_seconds: number; vad_stop_seconds: number; vad_confidence: number; response_chunking: 'first_clause' | 'sentence'; first_clause_min_chars: number; response_target_ms: number };
   telephony: TelephonySettings;
 }
 
@@ -61,6 +61,15 @@ export interface TranscriptEntry {
   interrupted: boolean;
 }
 
+export interface TurnLatency {
+  sequence: number;
+  kind: 'opening' | 'reply';
+  timestamp: string;
+  total_ms: number;
+  target_ms: number;
+  parts: { stage: string; duration_ms: number }[];
+}
+
 export interface CallRecord {
   id: string;
   started_at: string;
@@ -69,6 +78,7 @@ export interface CallRecord {
   end_reason: string | null;
   settings: Settings;
   transcript: TranscriptEntry[];
+  latencies?: TurnLatency[];
   channel?: 'browser' | 'telephone';
   provider?: TelephonyProviderName | null;
   destination?: string | null;

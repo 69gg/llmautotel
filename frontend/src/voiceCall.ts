@@ -3,7 +3,7 @@ import { SmallWebRTCTransport } from '@pipecat-ai/small-webrtc-transport';
 import { NativeMediaManager } from './nativeMediaManager';
 import { createAudioMeter, type AudioMeter } from './audioMeter';
 import { api, ApiError } from './api';
-import type { CallConnection, CallRecord, EndReason, StartCallResult, TranscriptEntry } from './types';
+import type { CallConnection, CallRecord, EndReason, StartCallResult, TranscriptEntry, TurnLatency } from './types';
 
 export type CallState = 'idle' | 'connecting' | 'listening' | 'recognizing' | 'thinking' | 'speaking' | 'ending' | 'ended';
 
@@ -11,6 +11,7 @@ export interface VoiceSnapshot {
   state: CallState;
   call: CallRecord | null;
   transcript: TranscriptEntry[];
+  latencies: TurnLatency[];
   muted: boolean;
   userSpeaking: boolean;
   localLevel: number;
@@ -44,7 +45,7 @@ interface Session {
   finishing?: Promise<void>;
 }
 
-const initialSnapshot: VoiceSnapshot = { state: 'idle', call: null, transcript: [], muted: false, userSpeaking: false, localLevel: 0, remoteLevel: 0, error: '', audioBlocked: false };
+const initialSnapshot: VoiceSnapshot = { state: 'idle', call: null, transcript: [], latencies: [], muted: false, userSpeaking: false, localLevel: 0, remoteLevel: 0, error: '', audioBlocked: false };
 const defaultDependencies: VoiceDependencies = {
   createClient: callbacks => {
     const mediaManager = new NativeMediaManager();
@@ -69,6 +70,12 @@ function isTranscript(value: unknown): value is TranscriptEntry {
   if (!value || typeof value !== 'object') return false;
   const entry = value as Partial<TranscriptEntry>;
   return (entry.role === 'assistant' || entry.role === 'user') && typeof entry.text === 'string' && typeof entry.timestamp === 'string' && typeof entry.interrupted === 'boolean';
+}
+
+function isLatency(value: unknown): value is TurnLatency {
+  if (!value || typeof value !== 'object') return false;
+  const entry = value as Partial<TurnLatency>;
+  return Number.isInteger(entry.sequence) && Number(entry.sequence) > 0 && ['opening', 'reply'].includes(entry.kind ?? '') && typeof entry.timestamp === 'string' && typeof entry.total_ms === 'number' && Number.isFinite(entry.total_ms) && entry.total_ms >= 0 && typeof entry.target_ms === 'number' && Number.isFinite(entry.target_ms) && entry.target_ms >= 100 && Array.isArray(entry.parts) && entry.parts.every(part => part && typeof part.stage === 'string' && typeof part.duration_ms === 'number' && Number.isFinite(part.duration_ms) && part.duration_ms >= 0);
 }
 
 function stopTracks(session: Session) {
@@ -167,6 +174,9 @@ export class VoiceCallController {
         const data = message as { type?: string; state?: string; entry?: unknown; message?: unknown; reason?: unknown };
         if (data.type === 'transcript' && isTranscript(data.entry)) {
           change({ transcript: [...this.snapshot.transcript, data.entry] });
+        } else if (data.type === 'latency' && isLatency(data.entry)) {
+          const entry = data.entry;
+          change({ latencies: [...this.snapshot.latencies.filter(item => item.sequence !== entry.sequence), entry].sort((a, b) => a.sequence - b.sequence) });
         } else if (data.type === 'call-ended' && data.reason === 'ai_hangup') {
           // Let the server finish the goodbye audio before its transport disconnects.
           session.serverEnded = true;
@@ -197,7 +207,7 @@ export class VoiceCallController {
       const result = await session.creation;
       session.id = result.call.id;
       if (!current()) { stopTracks(session); await session.finishing; return; }
-      change({ call: result.call });
+      change({ call: result.call, latencies: result.call.latencies ?? [] });
       await client.connect(result.connection);
       if (!current()) stopTracks(session);
     } catch (cause) {
@@ -229,7 +239,7 @@ export class VoiceCallController {
         }
         if (session.id) {
           const record = await this.dependencies.endCall(session.id, session.reason);
-          if (this.session === session) this.update({ call: record, transcript: record.transcript });
+          if (this.session === session) this.update({ call: record, transcript: record.transcript, latencies: record.latencies ?? this.snapshot.latencies });
         }
       } catch {
         if (this.session === session && !this.snapshot.error) this.update({ error: '本机音频已停止，通话记录暂未确认保存，请检查服务状态。' });

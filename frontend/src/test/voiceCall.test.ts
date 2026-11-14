@@ -67,6 +67,23 @@ function playback() {
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('语音会话生命周期', () => {
+  it('实时耗时去重，拒绝无效数据；重开后旧通话迟到统计不进入新通话', async () => {
+    const test = setup();
+    await test.controller.start();
+    const old = test.clients[0].callbacks;
+    const entry = { sequence: 1, kind: 'reply', timestamp: '2026-11-14T00:00:01Z', total_ms: 1200, target_ms: 1000, parts: [{ stage: 'transcription', duration_ms: 300 }] };
+    old.onServerMessage?.({ type: 'latency', entry } as never);
+    old.onServerMessage?.({ type: 'latency', entry: { ...entry, total_ms: 1400 } } as never);
+    old.onServerMessage?.({ type: 'latency', entry: { ...entry, total_ms: -1 } } as never);
+    old.onServerMessage?.({ type: 'latency', entry: { ...entry, parts: [null] } } as never);
+    expect(test.controller.getSnapshot().latencies).toEqual([{ ...entry, total_ms: 1400 }]);
+    await test.controller.end();
+    expect(test.controller.getSnapshot().latencies).toHaveLength(1);
+    await test.controller.start();
+    old.onServerMessage?.({ type: 'latency', entry } as never);
+    expect(test.controller.getSnapshot().latencies).toEqual([]);
+    await test.controller.end();
+  });
   it('麦克风拒绝时不创建服务端会话，并释放客户端', async () => {
     const disconnect = vi.fn().mockResolvedValue(undefined);
     const denied = setup({ createClient: () => ({

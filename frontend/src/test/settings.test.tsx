@@ -51,6 +51,32 @@ describe('配置中的密钥处理', () => {
 });
 
 describe('供应商协议与思考参数', () => {
+  it('保存口语风格、语气与低延迟配置，旧版选项仍可使用，保留独立模型和电话配置', async () => {
+    const user = userEvent.setup();
+    const save = vi.spyOn(api, 'saveSettings').mockResolvedValue(fixtureSettings);
+    render(<SettingsPage settings={fixtureSettings} onSave={vi.fn()} />);
+    expect(screen.getByLabelText('销售风格')).toHaveValue('conversational');
+    expect(screen.getByLabelText('合成断句')).toHaveValue('first_clause');
+    await user.selectOptions(screen.getByLabelText('销售风格'), 'direct');
+    await user.selectOptions(screen.getByLabelText('合成断句'), 'sentence');
+    await user.type(screen.getByLabelText('语音表达要求'), '用自然中文交谈，短句、适当停顿。');
+    await user.clear(screen.getByLabelText('停口确认'));
+    await user.type(screen.getByLabelText('停口确认'), '0.25');
+    await user.clear(screen.getByLabelText('首段最少字数'));
+    await user.type(screen.getByLabelText('首段最少字数'), '12');
+    await user.clear(screen.getByLabelText('响应目标'));
+    await user.type(screen.getByLabelText('响应目标'), '900');
+    await user.click(screen.getAllByRole('button', { name: '保存配置' })[0]);
+    await waitFor(() => expect(save).toHaveBeenCalledOnce());
+    const body = save.mock.calls[0][0];
+    expect(body.sales.style).toBe('direct');
+    expect(body.tts.instructions).toBe('用自然中文交谈，短句、适当停顿。');
+    expect(body.voice).toMatchObject({ response_chunking: 'sentence', first_clause_min_chars: 12, vad_stop_seconds: 0.25, response_target_ms: 900 });
+    expect(body.asr.model).toBe(fixtureSettings.asr.model);
+    expect(body.llm.thinking).toBeNull();
+    expect(body.telephony).toEqual(settingsUpdate(fixtureSettings, { asr: '', llm: '', tts: '' }).telephony);
+    expect(body.tts).not.toHaveProperty('api_key');
+  });
   it('默认保存保持 OpenAI 协议与服务默认思考，不预填连接参数', async () => {
     const user = userEvent.setup();
     const save = vi.spyOn(api, 'saveSettings').mockResolvedValue(fixtureSettings);

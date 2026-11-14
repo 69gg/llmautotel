@@ -3,11 +3,11 @@ import type { Settings } from '../types';
 export const fixtureSettings: Settings = {
   conversation: { mode: 'sales' },
   consultation: { product_info: '示例文档工具支持导出 PDF。', instructions: '', opening: '' },
-  sales: { goal: '介绍订阅服务', product_info: '月费 20 元', instructions: '', opening: '' },
+  sales: { style: 'conversational', goal: '介绍订阅服务', product_info: '月费 20 元', instructions: '', opening: '' },
   asr: { base_url: '', model: '', timeout_seconds: 30, api_key_set: true, protocol: 'openai', language: 'zh' },
   llm: { base_url: '', model: '', timeout_seconds: 30, api_key_set: false, thinking: null, reasoning_effort: null },
-  tts: { base_url: '', model: '', timeout_seconds: 30, api_key_set: false, protocol: 'openai', voice: '', sample_rate: 24000 },
-  voice: { vad_start_seconds: 0.1, vad_stop_seconds: 0.6, vad_confidence: 0.7 },
+  tts: { base_url: '', model: '', timeout_seconds: 30, api_key_set: false, protocol: 'openai', voice: '', sample_rate: 24000, instructions: '' },
+  voice: { vad_start_seconds: 0.1, vad_stop_seconds: 0.3, vad_confidence: 0.7, response_chunking: 'first_clause', first_clause_min_chars: 8, response_target_ms: 1000 },
   telephony: {
     public_base_url: '',
     asterisk: { enabled: false, ari_url: '', username: '', password_set: false, app: 'llmautotel', endpoint_template: '', caller_id: '', ring_timeout_seconds: 45, media_timeout_seconds: 10 },

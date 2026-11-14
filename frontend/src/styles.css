@@ -85,3 +85,16 @@ input, textarea, select { width: 100%; outline: none; border: 1px solid #dce1d5;
 .inbound-state.failed { color: #aa5347; }
 .telephone-number-note { margin: 10px 0 0; font-size: 11px; color: var(--text-muted); overflow-wrap: anywhere; }
 .phone-fields .provider-enabled { margin: 0 0 18px; align-self: center; }
+
+.latency-panel { border-top: 1px solid var(--line, #dce4d7); padding: 10px 0; font-size: 12px; }
+.conversation-panel > .latency-panel { margin: 0 24px; }
+.latency-entry + .latency-entry { margin-top: 8px; }
+.latency-entry summary { cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; line-height: 1.8; }
+.latency-entry summary strong { font-variant-numeric: tabular-nums; font-weight: 500; }
+.latency-entry summary small { color: #59764c; }
+.latency-entry summary .latency-over { color: #9a653c; }
+.latency-entry dl { margin: 10px 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 7px 18px; }
+.latency-entry dl div { display: flex; justify-content: space-between; gap: 8px; }
+.latency-entry dt { color: #6b7866; }
+.latency-entry dd { margin: 0; font-variant-numeric: tabular-nums; }
+.latency-entry p { color: #6b7866; font-size: 11px; line-height: 1.7; margin: 8px 0 0; }
