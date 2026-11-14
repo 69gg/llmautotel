@@ -32,4 +32,6 @@
 
 本轮真实账户复测：WebSocket TTS、HTTP TTS 和 ASR 均返回 HTTP 402，未获得成功语音样本。ASR 使用静音 WAV 仅探测协议／账户响应，不作为识别效果验证；未修改正式配置。完整结果和待验证范围见 [验收记录](acceptance.md)。
 
+同日稍后在新服务器使用用户最后提供的新 Key 做临时内存测试，WebSocket TTS 和 ASR 均成功，并完成一轮真实语音管线。停口至有效语音 3377.9 ms，未达到 1 秒目标；没有替换正式配置或重测 HTTP 回退路径。单项耗时、同音字差异、费用观察和样本限制见 [新服务器测量](latency.md#新服务器与临时-deepseek-key-实测)。
+
 官方资料：[TTS](https://api-docs.deepseek.com/zh-cn/guides/tts)、[ASR](https://api-docs.deepseek.com/zh-cn/guides/asr)。

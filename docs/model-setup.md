@@ -26,6 +26,8 @@ TTS 可配置 `instructions` 发音风格，留空时保持原请求。MiMo 将�
 
 2026-11-14 使用已有 DeepSeek 凭据只读复测新语音工具：WebSocket TTS、HTTP TTS 及 ASR 均返回 HTTP 402，没有获得成功语音样本；ASR 使用内存静音 WAV 只检查协议／账户响应，不是识别准确率测试。未据此推断具体账户原因，也没有修改正式配置或保存音频，1 秒目标仍未验收。
 
+同日部署新服务器后，使用用户最后提供的新 Key 做临时内存测试，DeepSeek ASR、WebSocket TTS 与文本流均成功；没有替换本表正式配置或处理原账户 402。一个完整短句样本为 3377.9 ms，未达 1 秒；费用观察与详细边界见 [新服务器测量](latency.md#新服务器与临时-deepseek-key-实测)。
+
 ## ChatGPT Plus 来电咨询示例
 
 2026-10-05 已在本机保存 `conversation.mode=consultation`，以 ChatGPT Plus 填写独立的咨询产品资料和回复要求。欢迎语为：“您好，我是 AI 咨询助手，欢迎咨询 ChatGPT Plus。我可以为您介绍功能和订阅信息。”
