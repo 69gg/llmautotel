@@ -18,7 +18,7 @@
   "endpoint_wait_ms": 200,
   "generation_timeout_seconds": 30,
   "max_audio_seconds": 20,
-  "lifetime_seconds": 1200,
+  "lifetime_seconds": 14400,
   "token_sha256": "",
   "max_turns": 12,
   "model_backend": "minicpm_o45",
@@ -37,40 +37,48 @@
     "length_penalty": 1.1
   },
   "fixture_instruction": "请只朗读指定文字，不添加任何其他内容。",
-  "model_prepare_timeout_seconds": 600,
-  "asset_prepare_timeout_seconds": 300,
-  "dependency_prepare_timeout_seconds": 300,
-  "asset_endpoint": "https://modelscope.cn/api/v1/models/OpenBMB/MiniCPM-o-4_5/repo",
+  "model_prepare_timeout_seconds": 7200,
+  "asset_prepare_timeout_seconds": 7200,
+  "dependency_prepare_timeout_seconds": 7200,
   "omni_assets": [
     {
       "path": "assets/token2wav/campplus.onnx",
       "bytes": 28303423,
-      "sha256": "a6ac6a63997761ae2997373e2ee1c47040854b4b759ea41ec48e4e42df0f4d73",
-      "revision": "57e2a63b47677b063558c717054de405d88a43d1"
+      "sha256": "a6ac6a63997761ae2997373e2ee1c47040854b4b759ea41ec48e4e42df0f4d73"
     },
     {
       "path": "assets/token2wav/flow.pt",
       "bytes": 623466603,
-      "sha256": "15ccff24256ff61537c7f8b51e025116b83405f3fb017b54b008fc97da115446",
-      "revision": "57e2a63b47677b063558c717054de405d88a43d1"
+      "sha256": "15ccff24256ff61537c7f8b51e025116b83405f3fb017b54b008fc97da115446"
     },
     {
       "path": "assets/token2wav/flow.yaml",
       "bytes": 1099,
-      "sha256": "723295d37bf11f5f1b896ca4f2f4c81ebc2fbb3e51b753c2507ef8461c751486",
-      "revision": "57e2a63b47677b063558c717054de405d88a43d1"
+      "sha256": "723295d37bf11f5f1b896ca4f2f4c81ebc2fbb3e51b753c2507ef8461c751486"
     },
     {
       "path": "assets/token2wav/hift.pt",
       "bytes": 83390254,
-      "sha256": "3386cc880324d4e98e05987b99107f49e40ed925b8ecc87c1f4939432d429879",
-      "revision": "57e2a63b47677b063558c717054de405d88a43d1"
+      "sha256": "3386cc880324d4e98e05987b99107f49e40ed925b8ecc87c1f4939432d429879"
     },
     {
       "path": "assets/token2wav/speech_tokenizer_v2_25hz.onnx",
       "bytes": 496082973,
-      "sha256": "d43342aa12163a80bf07bffb94c9de2e120a8df2f9917cd2f642e7f4219c6f71",
-      "revision": "57e2a63b47677b063558c717054de405d88a43d1"
+      "sha256": "d43342aa12163a80bf07bffb94c9de2e120a8df2f9917cd2f642e7f4219c6f71"
     }
-  ]
+  ],
+  "asset_request_timeout_seconds": 120,
+  "asset_download_chunk_bytes": 4194304,
+  "asset_progress_interval_seconds": 15,
+  "asset_sources": [
+    {
+      "url_template": "https://modelscope.cn/api/v1/models/OpenBMB/MiniCPM-o-4_5/repo?Revision={revision}&FilePath={path}",
+      "revision": "57e2a63b47677b063558c717054de405d88a43d1"
+    },
+    {
+      "url_template": "https://hf-mirror.com/openbmb/MiniCPM-o-4_5/resolve/{revision}/{path}",
+      "revision": "fb09628e98b1f55d8d5b863e0eccfcdd11bff499"
+    }
+  ],
+  "prepare_timeout_seconds": 7200
 }

@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+import re
+import threading
 import time
+from collections.abc import Iterator
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +15,8 @@ import pytest
 
 from experiments.openi_latency.omni_worker import AudioPrefill
 from experiments.openi_latency.prepare_omni import download_asset
+
+SOURCES = [{"url_template": "https://unused.invalid/{path}", "revision": "locked"}]
 
 
 class PrefillRecorder:
@@ -58,22 +64,124 @@ def test_omni_asset_reuses_only_size_and_hash_verified_file(tmp_path: Path) -> N
         "bytes": len(data),
         "sha256": hashlib.sha256(data).hexdigest(),
     }
-    download_asset(tmp_path, item, "https://unused.invalid", time.monotonic() + 1)
+    download_asset(tmp_path, item, SOURCES, time.monotonic() + 1)
     path.write_bytes(b"x" * len(data))
     with pytest.raises(ValueError, match="asset_checksum_mismatch"):
-        download_asset(tmp_path, item, "https://unused.invalid", time.monotonic() + 1)
+        download_asset(tmp_path, item, SOURCES, time.monotonic() + 1)
     path.write_bytes(b"x")
     with pytest.raises(ValueError, match="asset_size_mismatch"):
-        download_asset(tmp_path, item, "https://unused.invalid", time.monotonic() + 1)
+        download_asset(tmp_path, item, SOURCES, time.monotonic() + 1)
     item["path"] = "../outside.bin"
     with pytest.raises(ValueError, match="asset_outside_model"):
-        download_asset(tmp_path, item, "https://unused.invalid", time.monotonic() + 1)
+        download_asset(tmp_path, item, SOURCES, time.monotonic() + 1)
 
 
-def test_omni_asset_deadline_prevents_download_and_cleans_partial(tmp_path: Path) -> None:
+def test_omni_asset_deadline_prevents_download_and_keeps_partial(tmp_path: Path) -> None:
     item = {"path": "asset.bin", "bytes": 5, "sha256": "unused", "revision": "locked"}
     partial = tmp_path / "asset.bin.partial"
     partial.write_bytes(b"old")
     with pytest.raises(TimeoutError, match="asset_prepare_deadline"):
-        download_asset(tmp_path, item, "https://unused.invalid", time.monotonic() - 1)
+        download_asset(tmp_path, item, SOURCES, time.monotonic() - 1)
+    assert partial.read_bytes() == b"old"
+
+
+@pytest.fixture
+def asset_server() -> Iterator[tuple[str, bytes, list[str], list[tuple[str, str]]]]:
+    data = bytes(range(100))
+    modes: list[str] = []
+    requests: list[tuple[str, str]] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_: Any) -> None:
+            pass
+
+        def do_GET(self) -> None:
+            requests.append((self.path, self.headers["Range"]))
+            mode = modes.pop(0) if modes else "range"
+            if mode == "unavailable":
+                self.send_error(503)
+                return
+            match = re.fullmatch(r"bytes=(\d+)-(\d+)", self.headers["Range"])
+            assert match
+            start, end = map(int, match.groups())
+            if mode == "ignore_range":
+                self.send_response(200)
+                body = data
+            else:
+                self.send_response(206)
+                body = data[start : end + 1]
+                self.send_header(
+                    "Content-Range",
+                    f"bytes {start + (1 if mode == 'bad_range' else 0)}-{end}/{len(data)}",
+                )
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            if mode == "truncate":
+                body = body[:7]
+            self.wfile.write(body)
+            self.wfile.flush()
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}", data, modes, requests
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+@pytest.mark.parametrize("mode", ["truncate", "bad_range", "ignore_range", "unavailable"])
+def test_omni_asset_resumes_and_falls_back_without_appending_wrong_ranges(
+    tmp_path: Path,
+    asset_server: tuple[str, bytes, list[str], list[tuple[str, str]]],
+    mode: str,
+) -> None:
+    url, data, modes, requests = asset_server
+    item = {
+        "path": "nested/asset.bin",
+        "bytes": len(data),
+        "sha256": hashlib.sha256(data).hexdigest(),
+    }
+    partial = tmp_path / "nested/asset.bin.partial"
+    partial.parent.mkdir()
+    partial.write_bytes(data[:11])
+    modes.append(mode)
+    download_asset(
+        tmp_path,
+        item,
+        [
+            {"url_template": url + "/primary/{path}", "revision": "locked"},
+            {"url_template": url + "/fallback/{path}", "revision": "locked"},
+        ],
+        time.monotonic() + 5,
+        chunk_bytes=32,
+        request_timeout=1,
+        retry_delay=0,
+    )
+    assert (tmp_path / item["path"]).read_bytes() == data
     assert not partial.exists()
+    assert requests[0] == ("/primary/nested/asset.bin", "bytes=11-42")
+    if mode != "ignore_range":
+        offset = 18 if mode == "truncate" else 11
+        assert requests[1] == ("/fallback/nested/asset.bin", f"bytes={offset}-{offset + 31}")
+
+
+def test_omni_asset_rechecks_completed_partial_before_reusing_it(
+    tmp_path: Path, asset_server: tuple[str, bytes, list[str], list[tuple[str, str]]]
+) -> None:
+    url, data, _, requests = asset_server
+    partial = tmp_path / "asset.bin.partial"
+    partial.write_bytes(b"x" * len(data))
+    item = {"path": "asset.bin", "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+    download_asset(
+        tmp_path,
+        item,
+        [{"url_template": url + "/{path}", "revision": "locked"}],
+        time.monotonic() + 5,
+        chunk_bytes=32,
+        retry_delay=0,
+    )
+    assert requests[0][1] == "bytes=0-31"
+    assert (tmp_path / "asset.bin").read_bytes() == data

@@ -121,7 +121,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             timeout=30,
         ) as client:
             if args.mode == "wait":
-                return await wait_ready(client)
+                return await wait_ready(client, args.prepare_timeout_seconds)
             response = await client.get("/status")
             response.raise_for_status()
             return response.json()
@@ -196,6 +196,7 @@ def main() -> None:
     parser.add_argument("--reset-hop", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--repeats", type=int, choices=[1, 2, 3], default=2)
     parser.add_argument("--endpoint-wait-ms", type=int, default=200)
+    parser.add_argument("--prepare-timeout-seconds", type=float, default=10800)
     parser.add_argument("--label", default="remote_memory_terminal")
     parser.add_argument("--output")
     args = parser.parse_args()
