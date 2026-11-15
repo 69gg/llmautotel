@@ -6,6 +6,10 @@ OpenI 自部署选型使用独立的 [三模型延迟原型](../experiments/open
 
 原型新增同一任务中的 TTS 分块复位对照、阶段计时，以及复用正式 DeepSeek HTTP/WS provider 的固定文本测试。vLLM/TensorRT 和文本输入策略均可配置；使用 vLLM 时聚合语义小句进入其支持的入口，不将删除上游断言当作实现双流。命令、准备要求、计费字符预算及单项/整链路口径见[原型说明](../experiments/openi_latency/README.md#tts-优化与接口对照)。配置和单元测试不代表新的 GPU 延迟结果。
 
+2026-11-15 后续 GPU 对照已经完成：恢复 CosyVoice 每段初始分块后，固定完整文本 TTS 有效首音 p50 为 1645.7 ms（原分块 2430.9 ms）；同机完整链路 p50 为 2456.0 ms（本轮原分块 3221.8 ms），媒体服务器转发 p50 为 2812.6 ms。DeepSeek 同文本单项 HTTP/WS 的 p50 分别为 1448.5/1647.5 ms，均未进入 1 秒。各组仅三个样本、测量范围不同，不能当作稳定性或整条链路互相替代的结论。完整数据、初版 HTTP 测量错误及计费记录见[本轮报告](../experiments/openi_latency/results/2026-11-15-tts-compare.json)和[结果说明](../experiments/openi_latency/README.md#2026-11-15-tts-分块与-deepseek-对照)。任务已停止、服务器临时凭据已删除，未修改正式服务。
+
+小型 Omni 作为下一组独立选型，优先核查 MiniCPM-o 4.5 的原生流式语音和可配提示词，再用 Qwen2.5-Omni-3B 对照；硬件、接口限制和验收边界见 [Omni 选型](omni-evaluation.md)。本轮没有部署或测量 Omni，官方首 token/每单元数据不等于停口至有效首音。
+
 最终验收口径为“用户实际停口 → 终端第一段有意义的回复语音”，目标不超过 1000 ms。占位话、静音、开场首音和服务端页面指标都不能替代这个口径。首句内容也要人工核对确实在回答最新问题。
 
 ## 已实现

@@ -1,0 +1,721 @@
+{
+  "date": "2026-11-15",
+  "timezone": "Asia/Shanghai",
+  "product_data": "fictional_benchmark_product_not_ChatGPT_Plus_pricing",
+  "metric": "effective_speech_at_memory_playback_queue_not_physical_device",
+  "openi_task": {
+    "id": 934931,
+    "status": "STOPPED",
+    "commit": "a6f9ac5735bdbad74077a43b93e61d3b20886803",
+    "started_at": "2026-11-15T15:12:35+08:00",
+    "ended_at": "2026-11-15T15:18:25+08:00",
+    "runtime_seconds": 350,
+    "points_per_hour": 9,
+    "estimated_points_not_bill": 0.875,
+    "measured_samples": 15,
+    "fixture_warmup_tts_calls": 3,
+    "startup_notes": [
+      "initial_proxy_probe_HTTP_502_then_ready_before_model_tests",
+      "ONNX_CUDA_provider_failed_to_load_libcudnn_adv.so.9; submodule_GPU_execution_not_verified",
+      "optional_WeText_rules_HTTP_403; text_frontend_disabled_by_upstream",
+      "weights_from_station_mounts_no_external_weight_download"
+    ]
+  },
+  "accidental_old_configuration_restart": {
+    "id": 934915,
+    "status": "STOPPED",
+    "started_at": "2026-11-15T14:50:25+08:00",
+    "ended_at": "2026-11-15T14:51:15+08:00",
+    "runtime_seconds": 50,
+    "estimated_points_not_bill": 0.125,
+    "load_command_sent": false,
+    "measured_samples": 0
+  },
+  "openi_tts_fixed_text": {
+    "proxy_rtt_ms": [
+      40.9,
+      41.3,
+      40.8,
+      40.9,
+      41.2
+    ],
+    "proxy_rtt_median_ms": 40.9,
+    "type": "report",
+    "scope": "tts_only_fixed_text",
+    "samples": [
+      {
+        "ok": true,
+        "case": 0,
+        "text": "可以整理文档、总结会议、辅助写作；订阅每月99元；支持先试用再订阅。",
+        "first_pcm_ms": 3248.4,
+        "effective_audio_ms": 3408.4,
+        "total_ms": 4860.7,
+        "audio_ms": 7440.0,
+        "chunks": 2,
+        "tts_trace": {
+          "reset_hop": false,
+          "text_mode": "complete",
+          "hop_lengths_at_start": [
+            100
+          ],
+          "hop_length_at_end": 100,
+          "first_speech_token_ms": 62.3,
+          "first_acoustic_decode_start_ms": 2703.8
+        }
+      },
+      {
+        "ok": true,
+        "case": 0,
+        "text": "可以整理文档、总结会议、辅助写作；订阅每月99元；支持先试用再订阅。",
+        "first_pcm_ms": 1554.4,
+        "effective_audio_ms": 1714.4,
+        "total_ms": 5069.6,
+        "audio_ms": 7440.0,
+        "chunks": 3,
+        "tts_trace": {
+          "reset_hop": true,
+          "text_mode": "complete",
+          "hop_lengths_at_start": [
+            25
+          ],
+          "hop_length_at_end": 100,
+          "first_speech_token_ms": 59.9,
+          "first_acoustic_decode_start_ms": 1002.2
+        }
+      },
+      {
+        "ok": true,
+        "case": 1,
+        "text": "每月99元。",
+        "first_pcm_ms": 1506.9,
+        "effective_audio_ms": 1766.9,
+        "total_ms": 1516.3,
+        "audio_ms": 1760.0,
+        "chunks": 1,
+        "tts_trace": {
+          "reset_hop": false,
+          "text_mode": "complete",
+          "hop_lengths_at_start": [
+            100
+          ],
+          "hop_length_at_end": 100,
+          "first_speech_token_ms": 58.8,
+          "first_acoustic_decode_start_ms": 1102.4
+        }
+      },
+      {
+        "ok": true,
+        "case": 1,
+        "text": "每月99元。",
+        "first_pcm_ms": 1368.9,
+        "effective_audio_ms": 1628.9,
+        "total_ms": 1705.0,
+        "audio_ms": 1760.0,
+        "chunks": 2,
+        "tts_trace": {
+          "reset_hop": true,
+          "text_mode": "complete",
+          "hop_lengths_at_start": [
+            25
+          ],
+          "hop_length_at_end": 50,
+          "first_speech_token_ms": 57.0,
+          "first_acoustic_decode_start_ms": 1002.2
+        }
+      },
+      {
+        "ok": true,
+        "case": 2,
+        "text": "可以先试用，试用期结束后再订阅。",
+        "first_pcm_ms": 2310.9,
+        "effective_audio_ms": 2430.9,
+        "total_ms": 2332.5,
+        "audio_ms": 3200.0,
+        "chunks": 1,
+        "tts_trace": {
+          "reset_hop": false,
+          "text_mode": "complete",
+          "hop_lengths_at_start": [
+            100
+          ],
+          "hop_length_at_end": 100,
+          "first_speech_token_ms": 61.9,
+          "first_acoustic_decode_start_ms": 1903.0
+        }
+      },
+      {
+        "ok": true,
+        "case": 2,
+        "text": "可以先试用，试用期结束后再订阅。",
+        "first_pcm_ms": 1505.7,
+        "effective_audio_ms": 1645.7,
+        "total_ms": 2364.8,
+        "audio_ms": 3200.0,
+        "chunks": 2,
+        "tts_trace": {
+          "reset_hop": true,
+          "text_mode": "complete",
+          "hop_lengths_at_start": [
+            25
+          ],
+          "hop_length_at_end": 50,
+          "first_speech_token_ms": 57.2,
+          "first_acoustic_decode_start_ms": 1002.3
+        }
+      }
+    ],
+    "warmup": "three_fixture_tts_before_pairs",
+    "manifest": {
+      "gpu": "NVIDIA A100-PCIE-40GB",
+      "gpu_total_bytes": 42405855232,
+      "gpu_allocated_bytes": 7838659584,
+      "cuda": "12.4",
+      "versions": {
+        "torch": "2.6.0",
+        "torchaudio": "2.6.0",
+        "transformers": "4.51.3",
+        "funasr": "1.4.19",
+        "modelscope": "1.20.0"
+      },
+      "models": {
+        "asr_model": "FunAudioLLM/SenseVoiceSmall",
+        "llm_model": "Qwen/Qwen3-1.7B",
+        "tts_model": "FunAudioLLM/Fun-CosyVoice3-0.5B-2512"
+      },
+      "model_paths": {
+        "llm": "/tmp/pretrainmodel/Qwen3-1.7B",
+        "tts": "/tmp/pretrainmodel/Fun-CosyVoice3-0.5B-2512",
+        "asr": "/tmp/pretrainmodel/SenseVoiceSmall"
+      },
+      "allow_model_downloads": false,
+      "asr_streaming": false,
+      "engine": "pytorch_sdpa",
+      "tts_options": {
+        "tts_load_vllm": false,
+        "tts_load_trt": false,
+        "tts_fp16": true,
+        "tts_reset_hop": true,
+        "tts_text_mode": "auto"
+      },
+      "sample_rate": 24000
+    },
+    "seed": 0
+  },
+  "openi_chain_original": {
+    "proxy_rtt_ms": [
+      39.4,
+      39.9,
+      39.9,
+      40.0,
+      39.8
+    ],
+    "proxy_rtt_median_ms": 39.9,
+    "type": "report",
+    "scope": "openi_local_memory_terminal",
+    "endpointing": "simulated_wait_not_real_vad",
+    "warmup": "fixture_tts_prepared_before_first_sample",
+    "endpoint_wait_ms": 200,
+    "fixture_source": "synthetic_tts_not_real_caller",
+    "manifest": {
+      "gpu": "NVIDIA A100-PCIE-40GB",
+      "gpu_total_bytes": 42405855232,
+      "gpu_allocated_bytes": 7838659584,
+      "cuda": "12.4",
+      "versions": {
+        "torch": "2.6.0",
+        "torchaudio": "2.6.0",
+        "transformers": "4.51.3",
+        "funasr": "1.4.19",
+        "modelscope": "1.20.0"
+      },
+      "models": {
+        "asr_model": "FunAudioLLM/SenseVoiceSmall",
+        "llm_model": "Qwen/Qwen3-1.7B",
+        "tts_model": "FunAudioLLM/Fun-CosyVoice3-0.5B-2512"
+      },
+      "model_paths": {
+        "llm": "/tmp/pretrainmodel/Qwen3-1.7B",
+        "tts": "/tmp/pretrainmodel/Fun-CosyVoice3-0.5B-2512",
+        "asr": "/tmp/pretrainmodel/SenseVoiceSmall"
+      },
+      "allow_model_downloads": false,
+      "asr_streaming": false,
+      "engine": "pytorch_sdpa",
+      "tts_options": {
+        "tts_load_vllm": false,
+        "tts_load_trt": false,
+        "tts_fp16": true,
+        "tts_reset_hop": true,
+        "tts_text_mode": "auto"
+      },
+      "sample_rate": 24000
+    },
+    "tts_reset_hop": false,
+    "samples": [
+      {
+        "ok": true,
+        "generation": 1,
+        "user_text": "他可以做什么？",
+        "assistant_text": "可以整理文档、总结会议、辅助写作；订阅每月99元；支持先试用再订阅。",
+        "asr_finalize_ms": 91.4,
+        "asr_total_compute_ms": 91.2,
+        "llm_first_text_after_end_ms": 305.3,
+        "first_pcm_after_end_ms": 2961.8,
+        "effective_audio_ms": 3307.9,
+        "tts_trace": {
+          "reset_hop": false,
+          "text_mode": "bistream",
+          "hop_lengths_at_start": [
+            50
+          ],
+          "hop_length_at_end": 100,
+          "first_speech_token_ms": 514.0,
+          "first_acoustic_decode_start_ms": 2303.2
+        },
+        "fixture": 0
+      },
+      {
+        "ok": true,
+        "generation": 2,
+        "user_text": "订阅多少钱？",
+        "assistant_text": "每月99元。",
+        "asr_finalize_ms": 77.1,
+        "asr_total_compute_ms": 77.0,
+        "llm_first_text_after_end_ms": 128.9,
+        "first_pcm_after_end_ms": 2474.6,
+        "effective_audio_ms": 2695.9,
+        "tts_trace": {
+          "reset_hop": false,
+          "text_mode": "bistream",
+          "hop_lengths_at_start": [
+            100
+          ],
+          "hop_length_at_end": 100,
+          "first_speech_token_ms": 247.0,
+          "first_acoustic_decode_start_ms": 2002.6
+        },
+        "fixture": 1
+      },
+      {
+        "ok": true,
+        "generation": 3,
+        "user_text": "可以先试用吗？",
+        "assistant_text": "可以先试用，试用期结束后再订阅。",
+        "asr_finalize_ms": 74.1,
+        "asr_total_compute_ms": 73.9,
+        "llm_first_text_after_end_ms": 124.5,
+        "first_pcm_after_end_ms": 2879.9,
+        "effective_audio_ms": 3221.8,
+        "tts_trace": {
+          "reset_hop": false,
+          "text_mode": "bistream",
+          "hop_lengths_at_start": [
+            100
+          ],
+          "hop_length_at_end": 100,
+          "first_speech_token_ms": 398.4,
+          "first_acoustic_decode_start_ms": 2403.2
+        },
+        "fixture": 2
+      }
+    ],
+    "summary": {
+      "attempted": 3,
+      "successful": 3,
+      "failed": 0,
+      "p50_ms": 3221.8,
+      "p95_ms": 3307.9,
+      "sample_count_warning": "small_sample_not_stability_acceptance"
+    }
+  },
+  "openi_chain_reset": {
+    "proxy_rtt_ms": [
+      42.0,
+      41.3,
+      41.4,
+      41.2,
+      41.2
+    ],
+    "proxy_rtt_median_ms": 41.3,
+    "type": "report",
+    "scope": "openi_local_memory_terminal",
+    "endpointing": "simulated_wait_not_real_vad",
+    "warmup": "fixture_tts_prepared_before_first_sample",
+    "endpoint_wait_ms": 200,
+    "fixture_source": "synthetic_tts_not_real_caller",
+    "manifest": {
+      "gpu": "NVIDIA A100-PCIE-40GB",
+      "gpu_total_bytes": 42405855232,
+      "gpu_allocated_bytes": 7838659584,
+      "cuda": "12.4",
+      "versions": {
+        "torch": "2.6.0",
+        "torchaudio": "2.6.0",
+        "transformers": "4.51.3",
+        "funasr": "1.4.19",
+        "modelscope": "1.20.0"
+      },
+      "models": {
+        "asr_model": "FunAudioLLM/SenseVoiceSmall",
+        "llm_model": "Qwen/Qwen3-1.7B",
+        "tts_model": "FunAudioLLM/Fun-CosyVoice3-0.5B-2512"
+      },
+      "model_paths": {
+        "llm": "/tmp/pretrainmodel/Qwen3-1.7B",
+        "tts": "/tmp/pretrainmodel/Fun-CosyVoice3-0.5B-2512",
+        "asr": "/tmp/pretrainmodel/SenseVoiceSmall"
+      },
+      "allow_model_downloads": false,
+      "asr_streaming": false,
+      "engine": "pytorch_sdpa",
+      "tts_options": {
+        "tts_load_vllm": false,
+        "tts_load_trt": false,
+        "tts_fp16": true,
+        "tts_reset_hop": true,
+        "tts_text_mode": "auto"
+      },
+      "sample_rate": 24000
+    },
+    "tts_reset_hop": true,
+    "samples": [
+      {
+        "ok": true,
+        "generation": 4,
+        "user_text": "他可以做什么？",
+        "assistant_text": "可以整理文档、总结会议、辅助写作；订阅每月99元；支持先试用再订阅。",
+        "asr_finalize_ms": 76.5,
+        "asr_total_compute_ms": 76.3,
+        "llm_first_text_after_end_ms": 131.0,
+        "first_pcm_after_end_ms": 2114.9,
+        "effective_audio_ms": 2456.0,
+        "tts_trace": {
+          "reset_hop": true,
+          "text_mode": "bistream",
+          "hop_lengths_at_start": [
+            25
+          ],
+          "hop_length_at_end": 100,
+          "first_speech_token_ms": 342.4,
+          "first_acoustic_decode_start_ms": 1502.3
+        },
+        "fixture": 0
+      },
+      {
+        "ok": true,
+        "generation": 5,
+        "user_text": "订阅多少钱？",
+        "assistant_text": "每月99元。",
+        "asr_finalize_ms": 77.2,
+        "asr_total_compute_ms": 77.0,
+        "llm_first_text_after_end_ms": 132.3,
+        "first_pcm_after_end_ms": 1777.3,
+        "effective_audio_ms": 1998.2,
+        "tts_trace": {
+          "reset_hop": true,
+          "text_mode": "bistream",
+          "hop_lengths_at_start": [
+            25
+          ],
+          "hop_length_at_end": 50,
+          "first_speech_token_ms": 247.7,
+          "first_acoustic_decode_start_ms": 1202.6
+        },
+        "fixture": 1
+      },
+      {
+        "ok": true,
+        "generation": 6,
+        "user_text": "可以先试用吗？",
+        "assistant_text": "可以先试用，试用期结束后再订阅。",
+        "asr_finalize_ms": 78.1,
+        "asr_total_compute_ms": 77.9,
+        "llm_first_text_after_end_ms": 130.7,
+        "first_pcm_after_end_ms": 2320.6,
+        "effective_audio_ms": 2661.7,
+        "tts_trace": {
+          "reset_hop": true,
+          "text_mode": "bistream",
+          "hop_lengths_at_start": [
+            25
+          ],
+          "hop_length_at_end": 50,
+          "first_speech_token_ms": 449.1,
+          "first_acoustic_decode_start_ms": 1702.6
+        },
+        "fixture": 2
+      }
+    ],
+    "summary": {
+      "attempted": 3,
+      "successful": 3,
+      "failed": 0,
+      "p50_ms": 2456.0,
+      "p95_ms": 2661.7,
+      "sample_count_warning": "small_sample_not_stability_acceptance"
+    }
+  },
+  "media_server_chain_reset": {
+    "proxy_rtt_ms": [
+      38.8,
+      38.1,
+      37.8,
+      37.2,
+      37.7
+    ],
+    "proxy_rtt_median_ms": 37.8,
+    "scope": "media_server_memory_terminal",
+    "samples": [
+      {
+        "type": "done",
+        "ok": true,
+        "generation": 100,
+        "user_text": "他可以做什么？",
+        "assistant_text": "可以整理文档、总结会议、辅助写作；订阅每月99元；支持先试用再订阅。",
+        "asr_finalize_ms": 76.8,
+        "asr_total_compute_ms": 76.6,
+        "llm_first_text_after_end_ms": 128.8,
+        "first_pcm_after_end_ms": 2368.4,
+        "effective_audio_ms": 2812.6,
+        "tts_trace": {
+          "reset_hop": true,
+          "text_mode": "bistream",
+          "hop_lengths_at_start": [
+            25
+          ],
+          "hop_length_at_end": 100,
+          "first_speech_token_ms": 472.3,
+          "first_acoustic_decode_start_ms": 1802.9
+        },
+        "server_after_end_effective_ms": 2488.4,
+        "fixture": 0
+      },
+      {
+        "type": "done",
+        "ok": true,
+        "generation": 101,
+        "user_text": "订阅多少钱？",
+        "assistant_text": "每月99元。",
+        "asr_finalize_ms": 96.1,
+        "asr_total_compute_ms": 95.9,
+        "llm_first_text_after_end_ms": 147.6,
+        "first_pcm_after_end_ms": 1904.6,
+        "effective_audio_ms": 2249.4,
+        "tts_trace": {
+          "reset_hop": true,
+          "text_mode": "bistream",
+          "hop_lengths_at_start": [
+            25
+          ],
+          "hop_length_at_end": 50,
+          "first_speech_token_ms": 240.9,
+          "first_acoustic_decode_start_ms": 1202.2
+        },
+        "server_after_end_effective_ms": 1924.6,
+        "fixture": 1
+      },
+      {
+        "type": "done",
+        "ok": true,
+        "generation": 102,
+        "user_text": "可以先试用吗？",
+        "assistant_text": "可以先试用，试用期结束后再订阅。",
+        "asr_finalize_ms": 89.2,
+        "asr_total_compute_ms": 89.0,
+        "llm_first_text_after_end_ms": 140.7,
+        "first_pcm_after_end_ms": 4533.9,
+        "effective_audio_ms": 5056.5,
+        "tts_trace": {
+          "reset_hop": true,
+          "text_mode": "bistream",
+          "hop_lengths_at_start": [
+            25
+          ],
+          "hop_length_at_end": 50,
+          "first_speech_token_ms": 401.9,
+          "first_acoustic_decode_start_ms": 1402.4
+        },
+        "server_after_end_effective_ms": 4733.9,
+        "fixture": 2
+      }
+    ],
+    "summary": {
+      "attempted": 3,
+      "successful": 3,
+      "failed": 0,
+      "p50_ms": 2812.6,
+      "p95_ms": 5056.5,
+      "sample_count_warning": "small_sample_not_stability_acceptance"
+    },
+    "endpointing": "simulated_wait_not_real_vad",
+    "endpoint_wait_ms": 200,
+    "warmup": "fixture_tts_prepared_before_first_sample",
+    "fixture_source": "synthetic_tts_not_real_caller"
+  },
+  "deepseek_tts": {
+    "origin": "103.52.153.233",
+    "voice": "stella",
+    "sample_rate": 24000,
+    "input": "complete_text_available_at_request_start",
+    "websocket": {
+      "samples": [
+        {
+          "case": 0,
+          "repeat": 0,
+          "text": "可以整理文档、总结会议、辅助写作；订阅每月99元；支持先试用再订阅。",
+          "protocol": "websocket",
+          "ok": true,
+          "first_pcm_ms": 1367.5,
+          "effective_audio_ms": 1647.5,
+          "total_ms": 3290.3,
+          "audio_ms": 7880.0,
+          "chunks": 79
+        },
+        {
+          "case": 1,
+          "repeat": 0,
+          "text": "每月99元。",
+          "protocol": "websocket",
+          "ok": true,
+          "first_pcm_ms": 2417.5,
+          "effective_audio_ms": 2677.5,
+          "total_ms": 3659.3,
+          "audio_ms": 1760.0,
+          "chunks": 18
+        },
+        {
+          "case": 2,
+          "repeat": 0,
+          "text": "可以先试用，试用期结束后再订阅。",
+          "protocol": "websocket",
+          "ok": true,
+          "first_pcm_ms": 1299.1,
+          "effective_audio_ms": 1579.1,
+          "total_ms": 2574.2,
+          "audio_ms": 3400.0,
+          "chunks": 34
+        }
+      ],
+      "summary": {
+        "attempted": 3,
+        "successful": 3,
+        "failed": 0,
+        "p50_ms": 1647.5,
+        "p95_ms": 2677.5,
+        "sample_count_warning": "small_sample_not_stability_acceptance"
+      },
+      "connection": "new_connection_per_case"
+    },
+    "http": {
+      "scope": "tts_only_fixed_text",
+      "sample_rate": 24000,
+      "input": "complete_text_available_at_request_start",
+      "samples": [
+        {
+          "case": 0,
+          "repeat": 0,
+          "text": "可以整理文档、总结会议、辅助写作；订阅每月99元；支持先试用再订阅。",
+          "protocol": "http",
+          "ok": true,
+          "first_pcm_ms": 1394.8,
+          "effective_audio_ms": 1708.4,
+          "total_ms": 2706.9,
+          "audio_ms": 7920.0,
+          "chunks": 59
+        },
+        {
+          "case": 1,
+          "repeat": 0,
+          "text": "每月99元。",
+          "protocol": "http",
+          "ok": true,
+          "first_pcm_ms": 1142.6,
+          "effective_audio_ms": 1390.8,
+          "total_ms": 1306.2,
+          "audio_ms": 1440.0,
+          "chunks": 13
+        },
+        {
+          "case": 2,
+          "repeat": 0,
+          "text": "可以先试用，试用期结束后再订阅。",
+          "protocol": "http",
+          "ok": true,
+          "first_pcm_ms": 1162.7,
+          "effective_audio_ms": 1448.5,
+          "total_ms": 1491.2,
+          "audio_ms": 3440.0,
+          "chunks": 27
+        }
+      ],
+      "summary": {
+        "http": {
+          "attempted": 3,
+          "successful": 3,
+          "failed": 0,
+          "p50_ms": 1448.5,
+          "p95_ms": 1708.4,
+          "sample_count_warning": "small_sample_not_stability_acceptance"
+        },
+        "websocket": {
+          "attempted": 0,
+          "successful": 0,
+          "failed": 0,
+          "p50_ms": null,
+          "p95_ms": null,
+          "sample_count_warning": "small_sample_not_stability_acceptance"
+        }
+      },
+      "billable_characters_upper_bound": 108
+    },
+    "initial_http_measurement_errors": [
+      {
+        "case": 0,
+        "repeat": 0,
+        "text": "可以整理文档、总结会议、辅助写作；订阅每月99元；支持先试用再订阅。",
+        "protocol": "http",
+        "ok": false,
+        "error": "ValueError"
+      },
+      {
+        "case": 1,
+        "repeat": 0,
+        "text": "每月99元。",
+        "protocol": "http",
+        "ok": false,
+        "error": "ValueError"
+      },
+      {
+        "case": 2,
+        "repeat": 0,
+        "text": "可以先试用，试用期结束后再订阅。",
+        "protocol": "http",
+        "ok": false,
+        "error": "ValueError"
+      }
+    ],
+    "initial_error_cause": "benchmark_missing_cross_chunk_int16_alignment_fixed_before_HTTP_retest_not_provider_failure",
+    "billable_characters_conservative_upper_bound": 324,
+    "estimated_cost_cny_not_bill": {
+      "discount": 0.0486,
+      "list_price": 0.0972
+    }
+  },
+  "cleanup": {
+    "remote_temporary_directories_removed": 2,
+    "verified": true
+  },
+  "production_service_or_configuration_changed": false,
+  "unverified": [
+    "Omni_inference",
+    "vLLM_or_TensorRT_acceleration",
+    "real_VAD",
+    "microphone_and_speaker",
+    "browser_playback",
+    "telephone_line",
+    "interruptions",
+    "concurrency",
+    "subjective_voice_quality",
+    "long_run_latency_percentiles"
+  ]
+}
