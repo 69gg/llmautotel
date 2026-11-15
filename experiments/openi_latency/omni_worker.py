@@ -100,7 +100,10 @@ class MiniCPMModels(Models):
         if rate != 16000 or reference.ndim != 1:
             raise ValueError("reference_must_be_mono_16khz")
         self.reference = reference
-        self.model.init_token2wav_cache(prompt_speech_16k=reference)
+        # minicpmo-utils 1.0.5 omits autocast around the initial stream cache,
+        # although its streaming decoder uses it for the same FP32 speaker input.
+        with torch.amp.autocast("cuda", dtype=torch.float16, enabled=config["omni_tts_fp16"]):
+            self.model.init_token2wav_cache(prompt_speech_16k=reference)
         self.asr = AudioPrefill(self)
         self.manifest = {
             "backend": "minicpm_o45",

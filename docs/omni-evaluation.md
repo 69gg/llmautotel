@@ -32,6 +32,8 @@ MiniCPM-o 官方也列出全双工下可能读错字、混用中英文和能力�
 
 最初选型阶段仅记录可行性；随后按要求增加独立 MiniCPM-o 4.5 原生半双工流式实验，源码、依赖和语音资产锁定方式见[实验说明](../experiments/openi_latency/README.md#omni-独立实验)。实测结果尚待记录，不修改正式服务。当前三模型优化和 DeepSeek 对照结果见[响应速度文档](latency.md)及[实验记录](../experiments/openi_latency/README.md)。
 
+准备阶段已完成站内主权重加载、五个语音资产校验和独立依赖安装。首次参考音色缓存初始化遇到上游 FP32 输入与 FP16 权重不匹配，已定位到 minicpmo-utils 1.0.5 的缓存路径缺少 autocast；适配层补齐初始化精度上下文，并保存资产及依赖缓存，避免重新下载。此准备失败没有可用于首音对比的样本。
+
 ## 官方来源
 
 - [MiniCPM-o 4.5 模型与使用文档](https://github.com/OpenBMB/MiniCPM-o/blob/main/docs/minicpm_o4dot5_en.md)：9B、流式 API、硬件路径及已知限制。

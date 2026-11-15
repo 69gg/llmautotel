@@ -14,9 +14,43 @@ from typing import Any
 import pytest
 
 from experiments.openi_latency.omni_worker import AudioPrefill
-from experiments.openi_latency.prepare_omni import download_asset
+from experiments.openi_latency.prepare_omni import download_asset, link_model_shards
 
 SOURCES = [{"url_template": "https://unused.invalid/{path}", "revision": "locked"}]
+
+
+@pytest.mark.parametrize("previous", ["absent", "broken", "old_mount", "current_mount"])
+def test_omni_cached_image_refreshes_private_weight_links(tmp_path: Path, previous: str) -> None:
+    mounted = tmp_path / "new_mount"
+    model = tmp_path / "private_model"
+    mounted.mkdir()
+    model.mkdir()
+    shard = mounted / "model-00001.safetensors"
+    shard.write_bytes(b"new-mount-weights")
+    link = model / shard.name
+    old = tmp_path / "old-mount-weights"
+    if previous == "old_mount":
+        old.write_bytes(b"old-mount-weights")
+    if previous != "absent":
+        link.symlink_to(shard if previous == "current_mount" else old)
+    link_model_shards(mounted, model)
+    assert link.is_symlink()
+    assert link.resolve() == shard
+    assert link.read_bytes() == b"new-mount-weights"
+    if old.exists():
+        assert old.read_bytes() == b"old-mount-weights"
+
+
+def test_omni_cached_image_does_not_replace_regular_weight_files(tmp_path: Path) -> None:
+    mounted, model = tmp_path / "mount", tmp_path / "private"
+    mounted.mkdir()
+    model.mkdir()
+    (mounted / "model.safetensors").write_bytes(b"mounted")
+    target = model / "model.safetensors"
+    target.write_bytes(b"preserve")
+    with pytest.raises(ValueError, match="private_model_shard_not_symlink"):
+        link_model_shards(mounted, model)
+    assert target.read_bytes() == b"preserve"
 
 
 class PrefillRecorder:

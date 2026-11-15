@@ -31,6 +31,19 @@ def verify_file(path: Path, digest: str) -> None:
         raise ValueError(f"asset_checksum_mismatch: {path.name}")
 
 
+def link_model_shards(mounted: Path, model: Path) -> None:
+    """镜像重建后更新私有权重链接，不覆盖普通文件或修改挂载源。"""
+    for shard in mounted.glob("*.safetensors"):
+        link = model / shard.name
+        if link.is_symlink():
+            if link.resolve() == shard.resolve():
+                continue
+            link.unlink()
+        elif link.exists():
+            raise ValueError("private_model_shard_not_symlink")
+        link.symlink_to(shard.resolve())
+
+
 def download_asset(
     root: Path,
     item: dict[str, Any],
@@ -172,10 +185,7 @@ def prepare(root: Path, config: dict[str, Any]) -> None:
     model = Path(config["omni_model_directory"])
     model.mkdir(parents=True, exist_ok=True)
     # A private view keeps the shared platform model immutable.
-    for shard in mounted.glob("*.safetensors"):
-        link = model / shard.name
-        if not link.exists():
-            link.symlink_to(shard.resolve())
+    link_model_shards(mounted, model)
     archive = root / config["omni_source_archive"]
     verify_file(archive, config["omni_source_archive_sha256"])
     with tarfile.open(archive) as bundle:
