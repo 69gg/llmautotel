@@ -128,6 +128,6 @@ pnpm --dir frontend build
 
 2026-11-15三模型Graph4完整链路已测：同机2/3、媒体4/6首音低于1秒；媒体nearest-rank p50为912.8ms、常规中位数955.2ms、最大1044.7ms，九条播放队列均未断粮，仍不能承诺稳定1秒。详见[最终方案](docs/low-latency-final-plan.md)和[逐轮记录](experiments/openi_latency/results/2026-11-15-hybrid.json)。根据最新要求增加独立常驻兼容API，保留原业务与provider；[运行与接入说明](docs/openi-model-service.md)。实验100ms模拟端点不等于线上真实VAD，旧实验任务已停止与新常驻服务须分别报告。
 
-2026-11-15旧常驻任务935216曾运行，103.52.153.233三组模型API已备份切换、真实接口及取消冒烟通过；原业务配置单轮首段有效语音3879.2ms，**尚未达到1秒**，不能沿用独立实验数字作为上线验收。详见[旧链路上线验证](docs/openi-model-service.md#2026-11-15-旧-http-链路上线记录)。
+2026-11-15 已将 103.52.153.233 切到新版 GPU WebSocket 管线，OpenI 常驻任务为 935285；服务器负责网页、传输、播放与历史，GPU 负责整条推理业务。正式链路三轮停口到有效首音为 2088.1 / 1857.3 / 2083.1ms，**尚未达到1秒**。旧 HTTP 链路和原配置备份保留。详见[新版上线与实测](docs/openi-model-service.md#2026-11-15-新版双后端上线与实测)。
 
 支持两种可选处理链路：`voice.pipeline=local` 保留独立模型 API；`gpu` 通过单条鉴权音频长连接使用 GPU 端完整业务管线。详见[OpenI 服务与配置](docs/openi-model-service.md#gpu-整条业务管线新版)。
