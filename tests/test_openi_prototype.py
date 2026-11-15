@@ -16,6 +16,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from experiments.openi_latency.client import wait_ready
 from experiments.openi_latency.gateway import create_app
+from experiments.openi_latency.model_paths import resolve_models, validate_model
 from experiments.openi_latency.prepare_worker import image_requirements, prepare_source
 from experiments.openi_latency.protocol import (
     PlaybackClock,
@@ -118,3 +119,36 @@ def test_prepacked_source_is_verified_and_needs_no_git(tmp_path: Path) -> None:
     config["source_archive_sha256"] = "wrong"
     with pytest.raises(ValueError, match="checksum_mismatch"):
         prepare_source(tmp_path, config)
+
+
+def test_offline_models_resolve_mounts_and_cached_asr_without_download(tmp_path: Path) -> None:
+    mounts = tmp_path / "mounts"
+    cache = tmp_path / "cache"
+    for path in [mounts / "llm", mounts / "tts", cache / "iic" / "asr"]:
+        path.mkdir(parents=True)
+        (path / "weights.bin").write_bytes(b"weights")
+    config: dict[str, Any] = {
+        "mounted_models": {"llm": "llm", "tts": "tts"},
+        "cached_models": {"asr": "**/asr"},
+        "model_cache_roots": [str(cache)],
+        "required_model_files": {role: ["weights.bin"] for role in ["asr", "llm", "tts"]},
+        "allow_model_downloads": False,
+    }
+    paths = resolve_models(config, mounts)
+    assert Path(paths["asr"]) == cache / "iic" / "asr"
+    assert Path(paths["llm"]) == mounts / "llm"
+    (mounts / "tts" / "weights.bin").unlink()
+    with pytest.raises(FileNotFoundError, match="model_files_missing"):
+        resolve_models(config, mounts)
+
+
+def test_incomplete_shards_and_missing_cache_fail_before_model_loading(tmp_path: Path) -> None:
+    (tmp_path / "model.safetensors.index.json").write_text(
+        '{"weight_map":{"weight":"missing.safetensors"}}'
+    )
+    with pytest.raises(FileNotFoundError, match="model_shard_missing"):
+        validate_model(tmp_path, [])
+    with pytest.raises(ValueError, match="cached_model_expected_one"):
+        resolve_models({"cached_models": {"asr": "asr"}, "model_cache_roots": []}, None)
+    with pytest.raises(ValueError, match="require_all_three"):
+        resolve_models({"allow_model_downloads": False}, None)

@@ -93,6 +93,13 @@ def main() -> None:
     environment = Path(config.get("worker_environment", str(root / ".worker-env")))
     prepare_source(root, config)
     selected = image_python(config)
+    if config.get("mounted_models") or config.get("cached_models"):
+        print('OPENI_EVENT:{"type":"status","phase":"preparing_local_models"}', flush=True)
+        subprocess.run(
+            [selected, "-u", str(root / "model_paths.py")],
+            check=True,
+            timeout=config.get("model_prepare_timeout_seconds", 600),
+        )
     subprocess.run(
         [selected, "-m", "venv", "--system-site-packages", str(environment)],
         check=True,
@@ -127,6 +134,9 @@ def main() -> None:
     os.environ.setdefault("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", "1")
     os.environ.setdefault("OMP_NUM_THREADS", "4")
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+    if not config.get("allow_model_downloads", True):
+        os.environ["HF_HUB_OFFLINE"] = "1"
+        os.environ["TRANSFORMERS_OFFLINE"] = "1"
     os.execv(str(python), [str(python), "-u", str(root / "worker.py")])
 
 

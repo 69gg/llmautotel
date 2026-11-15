@@ -84,10 +84,21 @@ class Models:
         self.turns = 0
         self.generation = 0
         self.fixtures: list[bytes] = []
+        paths_file = ROOT / "model-paths.run.json"
+        paths = json.loads(paths_file.read_text()) if paths_file.exists() else {}
+
+        def model_path(role: str) -> str:
+            if role in paths:
+                return str(paths[role])
+            if not config.get("allow_model_downloads", True):
+                raise RuntimeError(f"local_model_path_missing: {role}")
+            return str(snapshot_download(config[f"{role}_model"]))
 
         emit({"type": "status", "phase": "loading_asr"})
         asr = ASRModel(
-            model=config["asr_model"],
+            model=model_path("asr")
+            if "asr" in paths or not config.get("allow_model_downloads", True)
+            else config["asr_model"],
             model_revision=config["asr_revision"],
             device="cuda:0",
             disable_update=True,
@@ -95,7 +106,7 @@ class Models:
         )
         self.asr = ASRStream(asr, config["asr_chunk"], np)
         emit({"type": "status", "phase": "loading_llm"})
-        llm_path = snapshot_download(config["llm_model"])
+        llm_path = model_path("llm")
         self.tokenizer = AutoTokenizer.from_pretrained(llm_path)
         self.llm = (
             AutoModelForCausalLM.from_pretrained(
@@ -105,7 +116,7 @@ class Models:
             .eval()
         )
         emit({"type": "status", "phase": "loading_tts"})
-        tts_path = snapshot_download(config["tts_model"])
+        tts_path = model_path("tts")
         self.tts = CosyModel(model_dir=tts_path, fp16=True, load_vllm=False, load_trt=False)
         self.tts.add_zero_shot_spk(
             config["prompt_text"], str(ROOT / "CosyVoice" / config["prompt_audio"]), "benchmark"
@@ -121,6 +132,8 @@ class Models:
                 for name in ["torch", "torchaudio", "transformers", "funasr", "modelscope"]
             },
             "models": {key: config[key] for key in ["asr_model", "llm_model", "tts_model"]},
+            "model_paths": paths,
+            "allow_model_downloads": config.get("allow_model_downloads", True),
             "engine": "pytorch_sdpa_baseline_no_vllm_no_tensorrt",
             "sample_rate": self.sample_rate,
         }
@@ -166,6 +179,7 @@ class Models:
             ],
             tokenize=False,
             add_generation_prompt=True,
+            enable_thinking=self.config.get("llm_enable_thinking", False),
         )
         inputs = self.tokenizer([prompt], return_tensors="pt").to("cuda:0")
         streamer = TextIteratorStreamer(
