@@ -63,3 +63,5 @@ MiniCPM-o 官方也列出全双工下可能读错字、混用中英文和能力�
 - [Qwen2.5-Omni-3B 模型卡](https://huggingface.co/Qwen/Qwen2.5-Omni-3B)：3B 候选与视频显存表。
 - [Qwen2.5-Omni 官方部署说明](https://github.com/QwenLM/Qwen2.5-Omni)：语音提示词限制和普通 vLLM Serve 的能力边界。
 - [Qwen3-Omni 官方说明](https://github.com/QwenLM/Qwen3-Omni)：30B-A3B 架构、语音与显存说明。
+
+后续小块、真实裁静音和100 ms模拟端点组合已经在同机三轮得到930.9～957.3 ms；媒体服务器六轮为981.0～1009.8 ms，仍有超1秒样本。理想端点预生成另测为860.2～863.8 ms，不能冒充真实VAD预测。缓存未命中、编译失败及回滚结果详见[优化报告](../experiments/openi_latency/results/2026-11-15-optimizations.json)；两项GPU任务均已核实停止。
