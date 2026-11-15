@@ -1,0 +1,6 @@
+.gateway-env/
+.worker-env/
+CosyVoice/
+settings.run.json
+*.log
+__pycache__/
