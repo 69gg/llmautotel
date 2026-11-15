@@ -13,6 +13,7 @@ import httpx
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
+from packaging.requirements import Requirement
 from starlette.websockets import WebSocketDisconnect
 
 from experiments.openi_latency.client import wait_ready
@@ -116,6 +117,23 @@ def test_verified_image_stack_is_not_downloaded_again() -> None:
         "torch==2.6.0\ntorchaudio==2.6.0\nnvidia-cudnn-cu12==9.1.0\ntriton==3.2.0\nfunasr==1.4.19\n"
     )
     assert image_requirements(lock) == "funasr==1.4.19\n"
+
+
+@pytest.mark.parametrize("version", ["3.11", "3.12"])
+def test_realtime_lock_respects_linux_image_python(version: str) -> None:
+    lock = Path("experiments/openi_latency/requirements-realtime.lock")
+    packages = [
+        Requirement(line) for line in lock.read_text().splitlines()
+        if line and not line.startswith("#")
+    ]
+    environment = {"sys_platform": "linux", "python_version": version}
+    active = {
+        item.name for item in packages
+        if item.marker is None or item.marker.evaluate(environment)
+    }
+    assert "httpx2" in active
+    assert "httpx2-jsfetch" not in active  # 仅用于 Emscripten，不适用于 GPU Linux。
+    assert ("wait-for2" in active) == (version == "3.11")
 
 
 def test_prepacked_source_is_verified_and_needs_no_git(tmp_path: Path) -> None:

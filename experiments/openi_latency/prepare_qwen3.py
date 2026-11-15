@@ -84,6 +84,13 @@ def prepare(root: Path, config: dict[str, Any]) -> None:
             timeout=config["dependency_prepare_timeout_seconds"],
         )
         os.environ["PYTHONPATH"] = str(root / "app_src")
+        # 在加载模型前检查整条业务链路的导入，及早暴露镜像 Python 差异。
+        subprocess.run(
+            [str(python), "-c", "from realtime_service import attach_realtime"],
+            cwd=root,
+            check=True,
+            timeout=60,
+        )
     os.environ.update(
         HF_HUB_OFFLINE="1",
         TRANSFORMERS_OFFLINE="1",
