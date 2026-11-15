@@ -151,6 +151,12 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         if args.mode == "tts":
             await ws.send(json.dumps({"type": "tts_benchmark"}))
             return {**report, **await until(ws, "report")}
+        if getattr(args, "variant", None):
+            await ws.send(json.dumps({"type": "select_variant", "variant": args.variant}))
+            await until(ws, "configured")
+        if args.mode == "optimize":
+            await ws.send(json.dumps({"type": "optimization_benchmark", "repeats": args.repeats}))
+            return {**report, **await until(ws, "report")}
         if args.mode == "local":
             await ws.send(
                 json.dumps(
@@ -190,10 +196,11 @@ def main() -> None:
     parser.add_argument("--token-file", required=True)
     parser.add_argument(
         "--mode",
-        choices=["probe", "load", "wait", "status", "local", "remote", "tts"],
+        choices=["probe", "load", "wait", "status", "local", "remote", "tts", "optimize"],
         default="probe",
     )
     parser.add_argument("--reset-hop", action=argparse.BooleanOptionalAction, default=None)
+    parser.add_argument("--variant", help="选择已配置的远端实验方案")
     parser.add_argument("--repeats", type=int, choices=[1, 2, 3], default=2)
     parser.add_argument("--endpoint-wait-ms", type=int, default=200)
     parser.add_argument("--prepare-timeout-seconds", type=float, default=10800)

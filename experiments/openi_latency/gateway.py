@@ -163,6 +163,8 @@ def create_app(config: dict[str, Any], runner: Runner | None = None) -> FastAPI:
                         "fixtures",
                         "local_benchmark",
                         "tts_benchmark",
+                        "optimization_benchmark",
+                        "select_variant",
                         "cancel",
                     }:
                         if kind in {"begin", "cancel"}:

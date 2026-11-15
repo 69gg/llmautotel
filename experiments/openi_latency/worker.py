@@ -422,9 +422,14 @@ class Models:
 def main() -> None:
     config = json.loads((ROOT / "settings.run.json").read_text())
     if config.get("model_backend") == "minicpm_o45":
-        from omni_worker import MiniCPMModels
+        if config.get("optimization_suite", False):
+            from omni_optimizations import OptimizedMiniCPMModels
 
-        models = MiniCPMModels(config)
+            models = OptimizedMiniCPMModels(config)
+        else:
+            from omni_worker import MiniCPMModels
+
+            models = MiniCPMModels(config)
     else:
         models = Models(config)
     commands: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=512)
@@ -475,6 +480,10 @@ def main() -> None:
                 emit(report)
             elif kind == "tts_benchmark":
                 emit(models.tts_benchmark())
+            elif kind == "optimization_benchmark":
+                emit(models.optimization_benchmark(min(3, max(1, int(command.get("repeats", 1))))))
+            elif kind == "select_variant":
+                emit(models.select_variant(str(command["variant"])))
         except Exception as exc:
             traceback.print_exc()
             emit(
