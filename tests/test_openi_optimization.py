@@ -95,3 +95,62 @@ def test_patch_uses_source_globals_through_foreign_decorator_namespace() -> None
     bind_streaming_chunk_options(model)
     model._latency_audio_tokens = 12
     assert list(model.streaming_generate()) == [(10, 12)]
+
+
+def test_compile_failure_restores_both_models_and_preserves_each_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from experiments.openi_latency.omni_optimizations import OptimizedMiniCPMModels
+
+    model = object.__new__(OptimizedMiniCPMModels)
+
+    def old_llm() -> None:
+        pass
+
+    def old_estimator() -> None:
+        pass
+
+    estimator = SimpleNamespace(forward_chunk=old_estimator)
+    model.model = SimpleNamespace(
+        llm=SimpleNamespace(forward=old_llm),
+        tts=SimpleNamespace(
+            audio_tokenizer=SimpleNamespace(
+                flow=SimpleNamespace(decoder=SimpleNamespace(estimator=estimator)),
+            )
+        ),
+    )
+    model.original_llm_forward = old_llm
+    model.original_estimator_forward = old_estimator
+    model.compilation = {"enabled": False}
+    model.manifest = {}
+    model.config = {
+        "generation_timeout_seconds": 30,
+        "optimization_compile": {
+            "timeout_seconds": 1800,
+            "llm": {},
+            "estimator": {},
+            "warmups": 1,
+        },
+    }
+    attempts = 0
+
+    def fake_compile(function: object, **kwargs: object) -> object:
+        nonlocal attempts
+        attempts += 1
+        if attempts % 2 == 0:
+            raise ValueError(f"attempt-{attempts}")
+        return lambda: None
+
+    model.torch = SimpleNamespace(compile=fake_compile)
+    monkeypatch.setattr("experiments.openi_latency.omni_optimizations.emit", lambda event: None)
+    for _ in range(2):
+        with pytest.raises(ValueError, match="attempt"):
+            model.compile_models()
+        assert model.model.llm.forward is old_llm
+        assert estimator.forward_chunk is old_estimator
+        assert model.config["generation_timeout_seconds"] == 30
+    recorded = model.manifest["compilation_attempts"]
+    assert [row["detail"] for row in recorded] == ["attempt-2", "attempt-4"]
+    assert all(row["enabled"] is False for row in recorded)

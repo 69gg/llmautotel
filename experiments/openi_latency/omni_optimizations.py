@@ -183,6 +183,7 @@ class OptimizedMiniCPMModels(MiniCPMModels):
             self.config["generation_timeout_seconds"] = old_timeout
             emit({"type": "status", "phase": "ready"})
             self.manifest["compilation"] = self.compilation
+            self.manifest.setdefault("compilation_attempts", []).append(dict(self.compilation))
 
     def benchmark_variant(self, name: str, repeats: int) -> dict[str, Any]:
         self.select_variant(name)
@@ -192,6 +193,9 @@ class OptimizedMiniCPMModels(MiniCPMModels):
             self.compile_models()
         samples: list[dict[str, Any]] = []
         for index, audio in enumerate(self.fixtures * repeats):
+            seed = self.config.get("optimization_seed")
+            if seed is not None:
+                self.torch.manual_seed(int(seed) + index % len(self.fixtures))
             self.cancel.clear()
             self.asr.reset()
             self.generation += 1
@@ -239,6 +243,7 @@ class OptimizedMiniCPMModels(MiniCPMModels):
                 expected_question=self.config["questions"][index % len(self.fixtures)],
                 speculation_start="actual_input_end_oracle" if speculation else None,
                 confirmation_wait_ms=self.config["endpoint_wait_ms"],
+                seed=int(seed) + index % len(self.fixtures) if seed is not None else None,
             )
             if result.get("ok") and clock.first_signal_at is not None:
                 result["effective_audio_ms"] = round((clock.first_signal_at - stopped) * 1000, 1)
