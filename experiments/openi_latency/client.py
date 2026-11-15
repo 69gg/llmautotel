@@ -148,8 +148,19 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             return {**report, **hello}
         if hello["phase"] != "ready":
             raise RuntimeError("worker_not_ready")
+        if args.mode == "tts":
+            await ws.send(json.dumps({"type": "tts_benchmark"}))
+            return {**report, **await until(ws, "report")}
         if args.mode == "local":
-            await ws.send(json.dumps({"type": "local_benchmark", "repeats": args.repeats}))
+            await ws.send(
+                json.dumps(
+                    {
+                        "type": "local_benchmark",
+                        "repeats": args.repeats,
+                        "reset_hop": args.reset_hop,
+                    }
+                )
+            )
             return {**report, **await until(ws, "report")}
         await ws.send(json.dumps({"type": "fixtures"}))
         fixtures = await until(ws, "fixtures")
@@ -178,8 +189,11 @@ def main() -> None:
     parser.add_argument("--url", required=True)
     parser.add_argument("--token-file", required=True)
     parser.add_argument(
-        "--mode", choices=["probe", "load", "wait", "status", "local", "remote"], default="probe"
+        "--mode",
+        choices=["probe", "load", "wait", "status", "local", "remote", "tts"],
+        default="probe",
     )
+    parser.add_argument("--reset-hop", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--repeats", type=int, choices=[1, 2, 3], default=2)
     parser.add_argument("--endpoint-wait-ms", type=int, default=200)
     parser.add_argument("--label", default="remote_memory_terminal")

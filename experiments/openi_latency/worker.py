@@ -6,6 +6,7 @@ import base64
 import importlib.metadata
 import json
 import queue
+import random
 import re
 import sys
 import threading
@@ -17,8 +18,10 @@ from typing import Any
 
 if __package__:
     from .protocol import PlaybackClock, summarize, trim_silence
+    from .synthesis import CosySynthesis
 else:
     from protocol import PlaybackClock, summarize, trim_silence
+    from synthesis import CosySynthesis
 
 ROOT = Path(__file__).resolve().parent
 PRINT_LOCK = threading.Lock()
@@ -139,11 +142,17 @@ class Models:
         )
         emit({"type": "status", "phase": "loading_tts"})
         tts_path = model_path("tts")
-        self.tts = CosyModel(model_dir=tts_path, fp16=True, load_vllm=False, load_trt=False)
+        self.tts = CosyModel(
+            model_dir=tts_path,
+            fp16=config.get("tts_fp16", True),
+            load_vllm=config.get("tts_load_vllm", False),
+            load_trt=config.get("tts_load_trt", False),
+        )
         self.tts.add_zero_shot_spk(
             config["prompt_text"], str(ROOT / "CosyVoice" / config["prompt_audio"]), "benchmark"
         )
         self.sample_rate = int(self.tts.sample_rate)
+        self.synthesis = CosySynthesis(self.tts, config)
         self.manifest = {
             "gpu": torch.cuda.get_device_name(0),
             "gpu_total_bytes": torch.cuda.get_device_properties(0).total_memory,
@@ -157,15 +166,25 @@ class Models:
             "model_paths": paths,
             "allow_model_downloads": config.get("allow_model_downloads", True),
             "asr_streaming": self.asr.streaming,
-            "engine": "pytorch_sdpa_baseline_no_vllm_no_tensorrt",
+            "engine": "pytorch_sdpa",
+            "tts_options": {
+                name: config.get(name, default)
+                for name, default in {
+                    "tts_load_vllm": False,
+                    "tts_load_trt": False,
+                    "tts_fp16": True,
+                    "tts_reset_hop": False,
+                    "tts_text_mode": "auto",
+                }.items()
+            },
             "sample_rate": self.sample_rate,
         }
 
-    def synthesize(self, text: str | Iterator[str]) -> Iterator[bytes]:
+    def synthesize(
+        self, text: str | Iterator[str], *, reset_hop: bool | None = None
+    ) -> Iterator[bytes]:
         with self.torch.inference_mode():
-            for result in self.tts.inference_zero_shot(
-                text, "", "", zero_shot_spk_id="benchmark", stream=True, text_frontend=False
-            ):
+            for result in self.synthesis.generate(text, reset_hop=reset_hop):
                 if self.cancel.is_set():
                     break
                 values = result["tts_speech"].detach().float().cpu().numpy().reshape(-1)
@@ -289,11 +308,14 @@ class Models:
             if first_packet_at is not None
             else None,
             "effective_audio_ms": round((clock.first_signal_at - start) * 1000, 1),
+            "tts_trace": self.synthesis.trace,
         }
         callback({"type": "done", **result})
         return result
 
-    def local_benchmark(self, repeats: int) -> dict[str, Any]:
+    def local_benchmark(self, repeats: int, reset_hop: bool | None = None) -> dict[str, Any]:
+        if reset_hop is not None:
+            self.config["tts_reset_hop"] = reset_hop
         self.make_fixtures()
         samples: list[dict[str, Any]] = []
         for index, audio in enumerate(self.fixtures * repeats):
@@ -334,8 +356,66 @@ class Models:
             "endpoint_wait_ms": self.config["endpoint_wait_ms"],
             "fixture_source": "synthetic_tts_not_real_caller",
             "manifest": self.manifest,
+            "tts_reset_hop": self.config.get("tts_reset_hop", False),
             "samples": samples,
             "summary": summarize(samples),
+        }
+
+    def tts_benchmark(self) -> dict[str, Any]:
+        """同一进程交替测原分块与逐轮复位，输入从配置读取，PCM 不落盘。"""
+        samples: list[dict[str, Any]] = []
+        texts = self.config["tts_benchmark_texts"]
+        if not texts or len(texts) > 6 or sum(map(len, texts)) > 1000:
+            raise ValueError("invalid_tts_benchmark_text_budget")
+        self.make_fixtures()
+        for index, text in enumerate(texts):
+            for reset in (False, True):
+                if self.turns >= self.config["max_turns"]:
+                    raise RuntimeError("turn_budget_exhausted")
+                self.turns += 1
+                self.cancel.clear()
+                seed = self.config.get("benchmark_seed", 0) + index
+                random.seed(seed)
+                self.np.random.seed(seed)
+                self.torch.manual_seed(seed)
+                # 两组从同一个已预热后的最大 hop 起步，再由实验开关决定是否复位。
+                self.tts.model.token_hop_len = self.tts.model.token_max_hop_len
+                started = time.perf_counter()
+                clock = PlaybackClock()
+                first_packet: float | None = None
+                audio_bytes = 0
+                chunks = 0
+                for pcm in self.synthesize(text, reset_hop=reset):
+                    now = time.perf_counter()
+                    if first_packet is None:
+                        first_packet = now
+                    clock.feed(pcm, self.sample_rate, now)
+                    audio_bytes += len(pcm)
+                    chunks += 1
+                result = {
+                    "ok": clock.first_signal_at is not None,
+                    "case": index,
+                    "text": text,
+                    "first_pcm_ms": round((first_packet - started) * 1000, 1)
+                    if first_packet is not None
+                    else None,
+                    "effective_audio_ms": round((clock.first_signal_at - started) * 1000, 1)
+                    if clock.first_signal_at is not None
+                    else None,
+                    "total_ms": round((time.perf_counter() - started) * 1000, 1),
+                    "audio_ms": round(audio_bytes / (self.sample_rate * 2) * 1000, 1),
+                    "chunks": chunks,
+                    "tts_trace": dict(self.synthesis.trace),
+                }
+                samples.append(result)
+                emit({"type": "sample", "index": len(samples) - 1, "result": result})
+        return {
+            "type": "report",
+            "scope": "tts_only_fixed_text",
+            "samples": samples,
+            "warmup": "three_fixture_tts_before_pairs",
+            "manifest": self.manifest,
+            "seed": self.config.get("benchmark_seed", 0),
         }
 
 
@@ -384,8 +464,12 @@ def main() -> None:
                     }
                 )
             elif kind == "local_benchmark":
-                report = models.local_benchmark(min(3, max(1, int(command.get("repeats", 2)))))
+                report = models.local_benchmark(
+                    min(3, max(1, int(command.get("repeats", 2)))), command.get("reset_hop")
+                )
                 emit(report)
+            elif kind == "tts_benchmark":
+                emit(models.tts_benchmark())
         except Exception as exc:
             traceback.print_exc()
             emit(

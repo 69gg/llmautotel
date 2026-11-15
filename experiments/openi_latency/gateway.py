@@ -156,7 +156,15 @@ def create_app(config: dict[str, Any], runner: Runner | None = None) -> FastAPI:
                     elif kind == "load":
                         await worker.start()
                         await ws.send_json({"type": "status", "phase": worker.phase})
-                    elif kind in {"begin", "audio", "end", "fixtures", "local_benchmark", "cancel"}:
+                    elif kind in {
+                        "begin",
+                        "audio",
+                        "end",
+                        "fixtures",
+                        "local_benchmark",
+                        "tts_benchmark",
+                        "cancel",
+                    }:
                         if kind in {"begin", "cancel"}:
                             worker.generation = int(message["generation"])
                         if kind == "audio":

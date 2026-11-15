@@ -61,6 +61,33 @@ uv run python experiments/openi_latency/client.py --url "$OPENI_URL" \
 
 取消使用生成代次过滤迟到音频，但这是实验级机制，不替换正式应用的打断保障。HTTP 状态接口和 WebSocket 控制指令需要认证；健康接口只返回阶段，不返回日志或模型资料。
 
+## TTS 优化与接口对照
+
+`settings.compare.json` 复用站内三模型，增加配置文本与逐轮分块对照，默认开启 `tts_reset_hop`。CosyVoice 当前源码把逐渐增大的 `token_hop_len` 保存在模型实例上；此选项在每段合成开始恢复模型原始值，保留训练要求的块长，不修改上游文件。旧配置默认不复位，可使用同一任务比较。
+
+`tts_load_vllm`、`tts_load_trt`、`tts_fp16` 和 `tts_text_mode` 均可配置，不对加速方式设置项目级禁用规则。`auto` 使用原生双流；实际加载 vLLM 时自动把文字聚合为有意义的中文小句，逐句交给其完整文本入口，音频仍流式输出。也可选择 `clauses` 对照。上游双流解码器没有 vLLM 实现，直接删除断言并不能补全该能力。开启加速器前须另外准备匹配的依赖或引擎；配置存在、模拟测试通过不等于已测 GPU 加速收益。保留站内权重是本轮控制准备时间的选择，后续可调整 `allow_model_downloads`。
+
+```sh
+uv run python experiments/openi_latency/client.py --url "$OPENI_URL" \
+  --token-file data/openi-token --mode tts --output data/openi-tts-compare.json
+uv run python experiments/openi_latency/client.py --url "$OPENI_URL" \
+  --token-file data/openi-token --mode local --repeats 1 --no-reset-hop
+uv run python experiments/openi_latency/client.py --url "$OPENI_URL" \
+  --token-file data/openi-token --mode local --repeats 1 --reset-hop
+```
+
+TTS 单项以相同完整文本交替测原分块与复位分块，复用预热后的模型与音色，每对使用同一个随机种子；记录实际起始块长、首个语音 token、首次声学解码开始、PCM 首包和内存终端有效首音。钩子计的是 CPU 可观察的阶段边界，不把 CUDA 提交耗时声称为声学推理时间。`tts` 的文本预先完整可用，不能与完整 ASR→LLM→TTS 延迟混用；完整链路由 `local`/`remote` 另测。
+
+DeepSeek 对照复用正式应用的 HTTP 和 WebSocket provider，使用同一份 `tts_benchmark_texts`。密钥通过环境变量或 `--key-stdin` 读取，不写配置或报告：
+
+```sh
+uv run python -m experiments.openi_latency.deepseek_benchmark \
+  --cases experiments/openi_latency/settings.compare.json \
+  --max-billable-chars 1000 --output data/deepseek-tts-compare.json
+```
+
+每个文本每种协议请求一次，最多三轮；遇到账户或限流错误立即停止后续请求。提交前按字符上限检查预算，报告不保存录音或异常原文。HTTP 按生产管线方式对齐跨包的 16 位采样，跳过前导静音并计播放队列；WS 每次新建连接，HTTP 复用客户端。`--protocol http/websocket` 可只测一种协议。结果只是固定文本 TTS 的小样本，网页、电话、真实音质、连续打断和完整回复仍须另验。
+
 ## 本机验证
 
 ```sh
