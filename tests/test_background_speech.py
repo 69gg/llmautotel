@@ -318,7 +318,9 @@ async def test_interruption_inside_internal_label_does_not_poison_next_reply(
         assert "迟到的旧回复" not in next_request
         assert "可以干啥？" in next_request
         await asyncio.sleep(0.1)
-        assert len(harness.tts_requests) == 2
+        # 首段可在顿号处提前合成；校验实际内容，避免绑定请求分块数。
+        assert [request["input"] for request in harness.tts_requests[:1]] == [OPENING]
+        assert "".join(request["input"] for request in harness.tts_requests[1:]) == ANSWER
     finally:
         old_stream.release.set()
         await harness.close()
