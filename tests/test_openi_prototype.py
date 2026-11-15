@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
@@ -24,6 +25,7 @@ from experiments.openi_latency.protocol import (
     summarize,
     trim_silence,
 )
+from experiments.openi_latency.worker import ASRStream
 
 
 def test_effective_audio_includes_leading_silence_and_playback_queue() -> None:
@@ -95,8 +97,7 @@ async def test_initialization_poll_uses_authenticated_http_and_surfaces_failure(
 
 def test_verified_image_stack_is_not_downloaded_again() -> None:
     lock = (
-        "torch==2.6.0\ntorchaudio==2.6.0\nnvidia-cudnn-cu12==9.1.0\n"
-        "triton==3.2.0\nfunasr==1.4.19\n"
+        "torch==2.6.0\ntorchaudio==2.6.0\nnvidia-cudnn-cu12==9.1.0\ntriton==3.2.0\nfunasr==1.4.19\n"
     )
     assert image_requirements(lock) == "funasr==1.4.19\n"
 
@@ -152,3 +153,39 @@ def test_incomplete_shards_and_missing_cache_fail_before_model_loading(tmp_path:
         resolve_models({"cached_models": {"asr": "asr"}, "model_cache_roots": []}, None)
     with pytest.raises(ValueError, match="require_all_three"):
         resolve_models({"allow_model_downloads": False}, None)
+
+
+@pytest.mark.parametrize("streaming", [True, False])
+def test_asr_modes_preserve_audio_and_reset_between_turns(streaming: bool) -> None:
+    calls: list[dict[str, Any]] = []
+
+    class Model:
+        def generate(self, **kwargs: Any) -> list[dict[str, str]]:
+            calls.append(kwargs)
+            return [{"text": "<|zh|><|NEUTRAL|><|Speech|>订阅多少钱？"}]
+
+    asr = ASRStream(
+        Model(), [0, 8, 4], np, streaming=streaming, generate_options={"language": "zh"}
+    )
+    first = struct.pack("<h", 1000) * 7680
+    tail = struct.pack("<h", 2000) * 320
+    asr.feed(first)
+    assert len(calls) == (1 if streaming else 0)
+    text = asr.feed(tail, final=True)
+    assert text == "订阅多少钱？" * (2 if streaming else 1)
+    np.testing.assert_array_equal(
+        np.concatenate([call["input"] for call in calls]),
+        np.frombuffer(first + tail, dtype="<i2").astype("float32") / 32768,
+    )
+    assert all(call["language"] == "zh" for call in calls)
+    if streaming:
+        assert [call["is_final"] for call in calls] == [False, True]
+        assert calls[0]["cache"] is calls[1]["cache"]
+    else:
+        assert "is_final" not in calls[0] and "chunk_size" not in calls[0]
+    previous_cache = asr.cache
+    asr.reset()
+    calls.clear()
+    assert not asr.pending and not asr.text and asr.cache is not previous_cache
+    assert asr.feed(tail, final=True) == "订阅多少钱？"
+    assert len(calls) == 1 and len(calls[0]["input"]) == 320

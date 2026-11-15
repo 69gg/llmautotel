@@ -6,6 +6,7 @@ import base64
 import importlib.metadata
 import json
 import queue
+import re
 import sys
 import threading
 import time
@@ -14,7 +15,10 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
-from protocol import PlaybackClock, summarize, trim_silence
+if __package__:
+    from .protocol import PlaybackClock, summarize, trim_silence
+else:
+    from protocol import PlaybackClock, summarize, trim_silence
 
 ROOT = Path(__file__).resolve().parent
 PRINT_LOCK = threading.Lock()
@@ -26,10 +30,20 @@ def emit(event: dict[str, Any]) -> None:
 
 
 class ASRStream:
-    def __init__(self, model: Any, chunk: list[int], numpy: Any) -> None:
+    def __init__(
+        self,
+        model: Any,
+        chunk: list[int],
+        numpy: Any,
+        *,
+        streaming: bool = True,
+        generate_options: dict[str, Any] | None = None,
+    ) -> None:
         self.model = model
         self.chunk = chunk
         self.numpy = numpy
+        self.streaming = streaming
+        self.generate_options = generate_options or {}
         self.reset()
 
     def reset(self) -> None:
@@ -40,25 +54,27 @@ class ASRStream:
 
     def feed(self, audio: bytes, *, final: bool = False) -> str:
         self.pending.extend(audio)
-        size = self.chunk[1] * 960 * 2
+        if not self.streaming and (not final or not self.pending):
+            return "".join(self.text)
+        size = self.chunk[1] * 960 * 2 if self.streaming else len(self.pending)
         while len(self.pending) >= size or final:
             last = final and len(self.pending) <= size
             payload = bytes(self.pending[:size]) or b"\0\0"
             del self.pending[:size]
             waveform = self.numpy.frombuffer(payload, dtype="<i2").astype("float32") / 32768
             start = time.perf_counter()
-            result = self.model.generate(
-                input=waveform,
-                cache=self.cache,
-                is_final=last,
-                chunk_size=self.chunk,
-                encoder_chunk_look_back=4,
-                decoder_chunk_look_back=1,
-                batch_size=1,
-                disable_pbar=True,
-            )
+            options = dict(self.generate_options)
+            if self.streaming:
+                options.update(
+                    cache=self.cache,
+                    is_final=last,
+                    chunk_size=self.chunk,
+                    encoder_chunk_look_back=4,
+                    decoder_chunk_look_back=1,
+                )
+            result = self.model.generate(input=waveform, batch_size=1, disable_pbar=True, **options)
             self.compute_seconds += time.perf_counter() - start
-            self.text.extend(str(row.get("text", "")) for row in result)
+            self.text.extend(re.sub(r"<\|[^|]*\|>", "", str(row.get("text", ""))) for row in result)
             if last:
                 break
         return "".join(self.text)
@@ -104,7 +120,13 @@ class Models:
             disable_update=True,
             disable_pbar=True,
         )
-        self.asr = ASRStream(asr, config["asr_chunk"], np)
+        self.asr = ASRStream(
+            asr,
+            config["asr_chunk"],
+            np,
+            streaming=config.get("asr_streaming", True),
+            generate_options=config.get("asr_generate_options"),
+        )
         emit({"type": "status", "phase": "loading_llm"})
         llm_path = model_path("llm")
         self.tokenizer = AutoTokenizer.from_pretrained(llm_path)
@@ -134,6 +156,7 @@ class Models:
             "models": {key: config[key] for key in ["asr_model", "llm_model", "tts_model"]},
             "model_paths": paths,
             "allow_model_downloads": config.get("allow_model_downloads", True),
+            "asr_streaming": self.asr.streaming,
             "engine": "pytorch_sdpa_baseline_no_vllm_no_tensorrt",
             "sample_rate": self.sample_rate,
         }
