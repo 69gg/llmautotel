@@ -1,0 +1,193 @@
+{
+  "pip_index_url": "https://mirrors.aliyun.com/pypi/simple",
+  "torch_version": "2.6.0",
+  "python_candidates": [
+    "python3.10",
+    "/opt/*/bin/python",
+    "/root/*/bin/python",
+    "/root/*/envs/*/bin/python",
+    "/usr/local/bin/python",
+    "python3"
+  ],
+  "generation_timeout_seconds": 30,
+  "lifetime_seconds": 7200,
+  "token_sha256": "",
+  "max_turns": 70,
+  "asset_prepare_timeout_seconds": 7200,
+  "asset_request_timeout_seconds": 120,
+  "asset_download_chunk_bytes": 4194304,
+  "dependency_prepare_timeout_seconds": 7200,
+  "prepare_timeout_seconds": 7200,
+  "model_backend": "hybrid_qwen3",
+  "worker_environment": "/tmp/llmautotel-qwen3-worker",
+  "qwen3_model_directory": "/tmp/llmautotel-qwen3-model",
+  "qwen3_revision": "5d83992436eae1d760afd27aff78a71d676296fc",
+  "qwen3_assets": [
+    {
+      "path": "config.json",
+      "bytes": 4494,
+      "sha256": "2e714c787c8edb98b05432685cddb634add2de4d4e645f653d68251ef72ba011"
+    },
+    {
+      "path": "generation_config.json",
+      "bytes": 245,
+      "sha256": "f1b90b4513f3b34c62851049e2492d7b4c5940daf1276f89c82b8ef04127f3aa"
+    },
+    {
+      "path": "merges.txt",
+      "bytes": 1671839,
+      "sha256": "599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3"
+    },
+    {
+      "path": "model.safetensors",
+      "bytes": 1829344272,
+      "sha256": "180b3b10eb1c9f1b4db7806d5475bae3071c0243c299d49926bab1da3b6946f6"
+    },
+    {
+      "path": "preprocessor_config.json",
+      "bytes": 127,
+      "sha256": "efdde1022ea9d76928bf7a9cd53139138f5ba2e466e837f08f6105ab1af1c119"
+    },
+    {
+      "path": "speech_tokenizer/config.json",
+      "bytes": 2336,
+      "sha256": "ee65bb901c876664ab8707c487157aa1a6ee57c65969b28fb5ec9dc211e68167"
+    },
+    {
+      "path": "speech_tokenizer/configuration.json",
+      "bytes": 76,
+      "sha256": "6bc26d64eb5024b4d1dab5a52371958b429256d6c9d59787f1f5294a54e0cebd"
+    },
+    {
+      "path": "speech_tokenizer/model.safetensors",
+      "bytes": 682293092,
+      "sha256": "836b7b357f5ea43e889936a3709af68dfe3751881acefe4ecf0dbd30ba571258"
+    },
+    {
+      "path": "speech_tokenizer/preprocessor_config.json",
+      "bytes": 234,
+      "sha256": "fcb3805e597e786d4067706e602f6688524640f8d3396790e2e09b5942fcbdfb"
+    },
+    {
+      "path": "tokenizer_config.json",
+      "bytes": 7344,
+      "sha256": "dc3c31c3bdaedd5016382bb3cbe07323026775ad51f5a4fb564505992ae4a670"
+    },
+    {
+      "path": "vocab.json",
+      "bytes": 2776833,
+      "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+    }
+  ],
+  "qwen3_reference_audio": "/tmp/llmautotel-omni-model/assets/audio_cases/minicpm_assistant__system_ref_audio.wav",
+  "qwen3_max_seq_len": 1024,
+  "qwen3_max_audio_tokens": 256,
+  "qwen3_warmup_text": "它可以整理文档。",
+  "tts_texts": [
+    "它可以整理文档、总结会议、辅助写作。",
+    "订阅每月99元。",
+    "支持先试用再订阅。"
+  ],
+  "qwen3_variants": [
+    {
+      "name": "eager8",
+      "chunk_size": 8,
+      "parity_mode": true,
+      "trim": false
+    },
+    {
+      "name": "graph8",
+      "chunk_size": 8,
+      "parity_mode": false,
+      "trim": false
+    },
+    {
+      "name": "graph4",
+      "chunk_size": 4,
+      "parity_mode": false,
+      "trim": true
+    },
+    {
+      "name": "graph2",
+      "chunk_size": 2,
+      "parity_mode": false,
+      "trim": true
+    }
+  ],
+  "asset_sources": [
+    {
+      "url_template": "https://hf-mirror.com/Qwen/Qwen3-TTS-12Hz-0.6B-Base/resolve/{revision}/{path}",
+      "revision": "5d83992436eae1d760afd27aff78a71d676296fc"
+    },
+    {
+      "url_template": "https://modelscope.cn/api/v1/models/Qwen/Qwen3-TTS-12Hz-0.6B-Base/repo?Revision={revision}&FilePath={path}",
+      "revision": "master"
+    }
+  ],
+  "system_prompt": "你是测试产品的电话顾问。以下均为虚构测试资料：团队助手可以整理文档、总结会议、辅助写作；订阅每月99元；支持先试用再订阅。只依据这些资料回答，未知内容直接说明。用自然中文和短句，直接回答当前问题，先给出有效信息，不用嗯、好的等填充语拖延。每次一至两句话，不输出思考、标题或内部标记，不调查用户使用习惯。",
+  "questions": [
+    "它可以做什么？",
+    "订阅多少钱？",
+    "可以先试用吗？"
+  ],
+  "asr_model": "FunAudioLLM/SenseVoiceSmall",
+  "llm_model": "Qwen/Qwen3-1.7B",
+  "asr_chunk": [
+    0,
+    8,
+    4
+  ],
+  "llm_enable_thinking": false,
+  "asr_streaming": false,
+  "asr_generate_options": {
+    "language": "zh",
+    "use_itn": true
+  },
+  "asr_worker_environment": "/tmp/llmautotel-hybrid-asr",
+  "asr_device": "cuda:0",
+  "tts_clause_min_chars": 8,
+  "tts_chunk_size": 4,
+  "tts_trim_leading_silence": true,
+  "endpoint_wait_ms": 100,
+  "max_audio_seconds": 120,
+  "model_prepare_timeout_seconds": 600,
+  "llm_warmup_text": "请回答你好。",
+  "llm_warmup_tokens": 8,
+  "allow_model_downloads": false,
+  "mounted_models": {
+    "asr": "SenseVoiceSmall",
+    "llm": "Qwen3-1.7B"
+  },
+  "cached_models": {
+    "tts": "llmautotel-qwen3-model"
+  },
+  "model_cache_roots": [
+    "/tmp"
+  ],
+  "required_model_files": {
+    "asr": [
+      "config.yaml",
+      "model.pt",
+      "chn_jpn_yue_eng_ko_spectok.bpe.model",
+      "am.mvn"
+    ],
+    "llm": [
+      "config.json",
+      "tokenizer_config.json",
+      "*.safetensors"
+    ],
+    "tts": [
+      "config.json",
+      "model.safetensors",
+      "speech_tokenizer/model.safetensors"
+    ]
+  },
+  "serve_models": true,
+  "service_max_input_tokens": 16384,
+  "service_max_output_tokens": 768,
+  "service_max_request_bytes": 8388608,
+  "service_max_tts_chars": 2000,
+  "service_max_messages": 200,
+  "service_tts_model": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+  "service_voice": "reference"
+}

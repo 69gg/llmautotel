@@ -68,3 +68,6 @@ MiniCPM-o 官方也列出全双工下可能读错字、混用中英文和能力�
 
 
 最新细化实测还比较音频块5/8/12：更小并不一定更快；块12媒体转发p50为1032.2ms，队列断粮477.1～1001.3ms。关闭CUDA Graph的默认Inductor编译在首个真实音频回合重编译超时，没有成功编译延迟样本，剩余矩阵未完成。任务935148/935162均STOPPED，估算3.875积分。两组媒体RTT不同、随机种子未固定，不能作为严格A/B或真实设备稳定性证明。[完整逐轮与失败边界](../experiments/openi_latency/results/2026-11-15-omni-refine.json)和[实测表](../experiments/openi_latency/README.md#2026-11-15-omni-细化与持续供音复测)已归档。
+
+
+2026-11-15三模型Graph4完整链路已测：同机2/3、媒体4/6首音低于1秒；媒体nearest-rank p50为912.8ms、常规中位数955.2ms、最大1044.7ms，九条播放队列均未断粮，仍不能承诺稳定1秒。详见[最终方案](low-latency-final-plan.md)和[逐轮记录](../experiments/openi_latency/results/2026-11-15-hybrid.json)。根据最新要求增加独立常驻兼容API，保留原业务与provider；[运行与接入说明](openi-model-service.md)。实验100ms模拟端点不等于线上真实VAD，旧实验任务已停止与新常驻服务须分别报告。

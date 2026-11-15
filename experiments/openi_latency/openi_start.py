@@ -15,6 +15,8 @@ def main() -> None:
     os.environ.setdefault("PIP_NO_CACHE_DIR", "1")
     os.environ.setdefault("PYTHONUNBUFFERED", "1")
     config = json.loads((root / "settings.run.json").read_text())
+    if config.get("serve_models", False):
+        os.execv(os.sys.executable, [os.sys.executable, "-u", str(root / "prepare_worker.py")])
     environment = root / ".gateway-env"
     python = environment / "bin/python"
     if not python.exists():

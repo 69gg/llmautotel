@@ -316,3 +316,6 @@ Graph4比较稳定；Graph2中位数更低但最慢样本更高，音质未听�
 `settings.hybrid.json` 将站内SenseVoiceSmall、Qwen3-1.7B和缓存Qwen3-TTS0.6B Graph4组合到同一GPU。复用原有协议、完整链路计时、分句与生成取消；每个真正生成的小句提交TTS，输出实际PCM，不添加填充语。独立ASR进程使用Transformers4.51.3，与TTS所需5.15.1隔离，两组依赖均锁定。默认SenseVoice为离线短句识别，不冒充流式；ASRStream可供真正的Paraformer在线模型复用，但换权重后需单独实测。
 
 已加入首音后的播放队列断粮、整段生成耗时和音频时长，不能只拿首音验收。模型与算子常驻预热；本机仅跑轻量测试，站内模型挂载、权重读取与推理仅在OpenI进行。正式provider与配置不变。本节配置并非性能达标声明，数据完成后归档。
+
+
+2026-11-15三模型Graph4完整链路已测：同机2/3、媒体4/6首音低于1秒；媒体nearest-rank p50为912.8ms、常规中位数955.2ms、最大1044.7ms，九条播放队列均未断粮，仍不能承诺稳定1秒。详见[最终方案](../../docs/low-latency-final-plan.md)和[逐轮记录](results/2026-11-15-hybrid.json)。根据最新要求增加独立常驻兼容API，保留原业务与provider；[运行与接入说明](../../docs/openi-model-service.md)。实验100ms模拟端点不等于线上真实VAD，旧实验任务已停止与新常驻服务须分别报告。

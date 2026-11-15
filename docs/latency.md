@@ -101,3 +101,6 @@ Qwen3-TTS0.6B的固定文本单项已实测：CUDA Graph4+裁静音三轮p50 306
 
 
 本次优化批次全部GPU已平台核实STOPPED，估算共14.700积分（Omni优化2.075、Qwen3准备/测试8.750、Omni细化与网络复测3.875；不含更早选型，非账单）。本机没有模型、权重下载或编译重任务，正式服务未改动。后续完整验证应同时检查低首音与持续供音，优先试实时ASR、小LLM、Graph4 Qwen3-TTS；单项时间不能相加作为端到端达标证据。
+
+
+2026-11-15三模型Graph4完整链路已测：同机2/3、媒体4/6首音低于1秒；媒体nearest-rank p50为912.8ms、常规中位数955.2ms、最大1044.7ms，九条播放队列均未断粮，仍不能承诺稳定1秒。详见[最终方案](low-latency-final-plan.md)和[逐轮记录](../experiments/openi_latency/results/2026-11-15-hybrid.json)。根据最新要求增加独立常驻兼容API，保留原业务与provider；[运行与接入说明](openi-model-service.md)。实验100ms模拟端点不等于线上真实VAD，旧实验任务已停止与新常驻服务须分别报告。

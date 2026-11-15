@@ -73,6 +73,8 @@ def prepare(root: Path, config: dict[str, Any]) -> None:
         TOKENIZERS_PARALLELISM="false",
     )
     entry = "worker.py" if config.get("model_backend") == "hybrid_qwen3" else "qwen3_worker.py"
+    if config.get("serve_models", False):
+        entry = "hybrid_api.py"
     os.execv(str(python), [str(python), "-u", str(root / entry)])
 
 

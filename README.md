@@ -124,3 +124,6 @@ pnpm --dir frontend build
 低延迟模式支持首段中文分句提前合成，保留旧版整句模式。服务端逐轮首音耗时随历史保存；最终 1 秒目标按用户停口到终端首段有效语音验收，详见 [语音管线](docs/voice.md)。
 
 可用 `uv run python -m llmautotel.benchmark --question 支持哪些功能？ --samples 3 --chunking first_clause --vad-stop 0.3` 测量真实模型到内存终端的有效 PCM。脚本只读配置，不拨号、不获取麦克风、不保存音频或历史，不能代替终端验收。当前结果及流式替换方案见 [延迟测量与方案](docs/latency.md)。
+
+
+2026-11-15三模型Graph4完整链路已测：同机2/3、媒体4/6首音低于1秒；媒体nearest-rank p50为912.8ms、常规中位数955.2ms、最大1044.7ms，九条播放队列均未断粮，仍不能承诺稳定1秒。详见[最终方案](docs/low-latency-final-plan.md)和[逐轮记录](experiments/openi_latency/results/2026-11-15-hybrid.json)。根据最新要求增加独立常驻兼容API，保留原业务与provider；[运行与接入说明](docs/openi-model-service.md)。实验100ms模拟端点不等于线上真实VAD，旧实验任务已停止与新常驻服务须分别报告。
