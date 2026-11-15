@@ -169,3 +169,5 @@ GPU 按生成代次标注音频；插话后发出 flush，服务器清播放队�
 
 
 2026-11-15 新版业务发布使用 `/opt/llmautotel/releases/20261115T140000Z-ce1c289`。复用依赖时，`.venv` 必须指向旧发布环境的实际绝对路径，不能指向 `current/.venv`，否则切换后会形成循环；systemd 通过 `PYTHONPATH=/opt/llmautotel/current/src` 加载当前源码。新发布目录及父目录须允许服务用户读取和进入。发布前备份 SQLite 和原链接，确认无活动通话，重启后验证健康接口与新配置字段。
+
+同日首音优化发布切到 `/opt/llmautotel/releases/20261115T152000Z-4428b0d`，复用上述实际虚拟环境并重启 `llmautotel`。SQLite和原发布链接备份在 `/var/backups/llmautotel/20261115T152000Z-first-audio`；重启后健康ok、NRestarts=0、源码散列一致。OpenI任务更新为935318，模型配置同步为新分配入口，详见[首音优化记录](openi-model-service.md#2026-11-15-首音优化与重启)。

@@ -1,0 +1,199 @@
+{
+  "measured_at": "2026-11-15T23:35:00+08:00",
+  "scope": "production_business_pipeline_to_server_in_memory_terminal_not_device",
+  "deployment": {
+    "business_server": "103.52.153.233",
+    "business_release": "20261115T152000Z-4428b0d",
+    "gpu_task": 935318,
+    "gpu_commit": "7573915f23e73e114ce35ed18440c1d80e0a7b25",
+    "gpu_base": "https://ddff9ac14831471a.mlunotebook.openi.org.cn",
+    "previous_gpu_task": 935285,
+    "previous_gpu_stopped_at": "2026-11-15T23:19:25+08:00",
+    "gpu_started_at": "2026-11-15T23:24:55+08:00",
+    "gpu_kept_running": true,
+    "tts_first_audio_priority": true
+  },
+  "changes": [
+    "cancellable_TTS_first_nonempty_PCM_priority_over_subsequent_LLM_decode",
+    "first_clause_Chinese_list_boundary_with_numeric_and_ASCII_model_guard",
+    "generic_short_first_sentence_prompt"
+  ],
+  "samples": [
+    {
+      "sequence": 1,
+      "effective_audio_ms": 1423.3,
+      "target_ms": 1000,
+      "within_target": false,
+      "user_text": "他可以做什么？",
+      "assistant_text": "ChatGPT Plus 可以帮助解释知识、 整理学习资料、起草和润色文章、总结文件及分析数据。 它还提供语音对话和图片生成。 Plus 相比免费方案提供更高的消息及工具使用额度、更广的模型选择和高级推理能力。",
+      "server_latency": {
+        "sequence": 1,
+        "kind": "reply",
+        "timestamp": "2026-11-15T15:33:31.742363+00:00",
+        "total_ms": 1223.6,
+        "target_ms": 1000,
+        "parts": [
+          {
+            "stage": "endpointing_wait",
+            "duration_ms": 100.0
+          },
+          {
+            "stage": "transcription",
+            "duration_ms": 270.3
+          },
+          {
+            "stage": "turn_detection",
+            "duration_ms": 3.9
+          },
+          {
+            "stage": "llm_inference",
+            "duration_ms": 264.6
+          },
+          {
+            "stage": "speech_synthesis",
+            "duration_ms": 583.7
+          },
+          {
+            "stage": "pipeline",
+            "duration_ms": 1.2
+          }
+        ]
+      }
+    },
+    {
+      "sequence": 2,
+      "effective_audio_ms": 1244.7,
+      "target_ms": 1000,
+      "within_target": false,
+      "user_text": "他可以做什么？",
+      "assistant_text": "ChatGPT Plus 可以帮助解释知识、 整理学习资料、起草和润色文章、总结文件及分析数据。 它还提供语音对话和图片生成。 Plus 相比免费方案提供更高的消息及工具使用额度、更广的模型选择和高级推理能力。",
+      "server_latency": {
+        "sequence": 1,
+        "kind": "reply",
+        "timestamp": "2026-11-15T15:34:06.303409+00:00",
+        "total_ms": 1070.3,
+        "target_ms": 1000,
+        "parts": [
+          {
+            "stage": "endpointing_wait",
+            "duration_ms": 100.0
+          },
+          {
+            "stage": "transcription",
+            "duration_ms": 93.7
+          },
+          {
+            "stage": "turn_detection",
+            "duration_ms": 5.3
+          },
+          {
+            "stage": "llm_inference",
+            "duration_ms": 221.0
+          },
+          {
+            "stage": "speech_synthesis",
+            "duration_ms": 648.8
+          },
+          {
+            "stage": "pipeline",
+            "duration_ms": 1.6
+          }
+        ]
+      }
+    },
+    {
+      "sequence": 3,
+      "effective_audio_ms": 1413.3,
+      "target_ms": 1000,
+      "within_target": false,
+      "user_text": "他可以做什么？",
+      "assistant_text": "ChatGPT Plus 可以帮助解释知识、 整理学习资料、起草和润色文章、总结文件及分析数据。 它还提供语音对话和图片生成。 Plus 相比免费方案提供更高的消息及工具使用额度、更广的模型选择和高级推理能力。",
+      "server_latency": {
+        "sequence": 1,
+        "kind": "reply",
+        "timestamp": "2026-11-15T15:34:39.221105+00:00",
+        "total_ms": 961.8,
+        "target_ms": 1000,
+        "parts": [
+          {
+            "stage": "endpointing_wait",
+            "duration_ms": 100.0
+          },
+          {
+            "stage": "transcription",
+            "duration_ms": 87.6
+          },
+          {
+            "stage": "turn_detection",
+            "duration_ms": 5.7
+          },
+          {
+            "stage": "llm_inference",
+            "duration_ms": 216.3
+          },
+          {
+            "stage": "speech_synthesis",
+            "duration_ms": 551.1
+          },
+          {
+            "stage": "pipeline",
+            "duration_ms": 1.1
+          }
+        ]
+      }
+    }
+  ],
+  "summary": {
+    "scope": "in_memory_terminal_not_browser_or_phone",
+    "semantic_check": "review_assistant_text_manually",
+    "models": {
+      "asr": "FunAudioLLM/SenseVoiceSmall",
+      "llm": "Qwen/Qwen3-1.7B",
+      "tts": "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
+    },
+    "chunking": "first_clause",
+    "vad_stop_seconds": 0.1,
+    "rms_threshold": 300,
+    "samples": 3,
+    "min_ms": 1244.7,
+    "median_ms": 1413.3,
+    "max_ms": 1423.3,
+    "within_target": 0
+  },
+  "previous_samples_effective_ms": [
+    2088.1,
+    1857.3,
+    2083.1
+  ],
+  "previous_tts_first_audio_ms": [
+    1239.0,
+    1268.0,
+    1085.0
+  ],
+  "opening_reconnect": [
+    {
+      "audio_packets": 382,
+      "valid_signal": true,
+      "played_ack": true,
+      "text_committed": true
+    },
+    {
+      "audio_packets": 430,
+      "valid_signal": true,
+      "played_ack": true,
+      "text_committed": true
+    }
+  ],
+  "automated_validation": {
+    "backend_passed": 534,
+    "skipped": 3,
+    "ruff": "passed"
+  },
+  "limitations": [
+    "three sequential synthetic-input trials, not strict single-variable A/B or SLA",
+    "GPU stage metrics are not effective terminal audio",
+    "no browser, microphone, telephone or subjective listening acceptance",
+    "no locally loaded models or downloaded weights",
+    "one second target not met"
+  ]
+}
