@@ -1,0 +1,205 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-15",
+  "timezone": "Asia/Shanghai",
+  "main_repository_commit": "9fbd093",
+  "openi_repository_commit": "cec92c2d0a",
+  "settings": "settings.station.json",
+  "run": {
+    "task_id": 934903,
+    "code_commit": "cec92c2d0a",
+    "status": "STOPPED",
+    "created_at": "2026-11-15T14:18:25+08:00",
+    "started_at": "2026-11-15T14:18:45+08:00",
+    "operation_deadline": "2026-11-15T14:38:45+08:00",
+    "gpu": "A100 40GB",
+    "points_per_hour": 9,
+    "samples": 6,
+    "ended_at": "2026-11-15T14:24:35+08:00",
+    "duration_seconds": 350,
+    "estimated_points": 0.875,
+    "local_samples": 3,
+    "media_server_samples": 3,
+    "remote_temporary_directory_removed": true
+  },
+  "target_ms": 1000,
+  "target_met": false,
+  "method": {
+    "input": "synthetic_question_pcm_16000_mono_s16le_realtime_20ms_chunks",
+    "asr": "utterance_final_not_streaming",
+    "llm": "streaming_text_thinking_disabled",
+    "tts": "streaming_text_input_and_pcm_output",
+    "measurement": "input_last_effective_block_end_to_memory_playback_first_effective_audio",
+    "rms_threshold": 100,
+    "rms_window_ms": 20,
+    "endpoint_wait_ms": 200,
+    "warmup": "three_tts_questions_prepared_before_local_samples",
+    "sample_order": "three_local_then_three_media_server",
+    "large_model_weights": "all_three_prepared_by_c2net_from_station_models",
+    "optional_text_normalizer": "wetext_rule_request_http_403_caught_by_upstream_then_disabled"
+  },
+  "local": {
+    "proxy_rtt_ms": [
+      38.5,
+      39.4,
+      39.4,
+      39.6,
+      39.4
+    ],
+    "proxy_rtt_median_ms": 39.4,
+    "type": "report",
+    "scope": "openi_local_memory_terminal",
+    "endpointing": "simulated_wait_not_real_vad",
+    "warmup": "fixture_tts_prepared_before_first_sample",
+    "endpoint_wait_ms": 200,
+    "fixture_source": "synthetic_tts_not_real_caller",
+    "manifest": {
+      "gpu": "NVIDIA A100-PCIE-40GB",
+      "gpu_total_bytes": 42405855232,
+      "gpu_allocated_bytes": 7838659584,
+      "cuda": "12.4",
+      "versions": {
+        "torch": "2.6.0",
+        "torchaudio": "2.6.0",
+        "transformers": "4.51.3",
+        "funasr": "1.4.19",
+        "modelscope": "1.20.0"
+      },
+      "models": {
+        "asr_model": "FunAudioLLM/SenseVoiceSmall",
+        "llm_model": "Qwen/Qwen3-1.7B",
+        "tts_model": "FunAudioLLM/Fun-CosyVoice3-0.5B-2512"
+      },
+      "model_paths": {
+        "llm": "/tmp/pretrainmodel/Qwen3-1.7B",
+        "tts": "/tmp/pretrainmodel/Fun-CosyVoice3-0.5B-2512",
+        "asr": "/tmp/pretrainmodel/SenseVoiceSmall"
+      },
+      "allow_model_downloads": false,
+      "asr_streaming": false,
+      "engine": "pytorch_sdpa_baseline_no_vllm_no_tensorrt",
+      "sample_rate": 24000
+    },
+    "samples": [
+      {
+        "ok": true,
+        "generation": 1,
+        "user_text": "他可以做什么？",
+        "assistant_text": "可以整理文档、总结会议、辅助写作；订阅每月99元；支持先试用再订阅。",
+        "asr_finalize_ms": 106.7,
+        "asr_total_compute_ms": 106.5,
+        "llm_first_text_after_end_ms": 315.4,
+        "first_pcm_after_end_ms": 2367.9,
+        "effective_audio_ms": 2714.6,
+        "fixture": 0
+      },
+      {
+        "ok": true,
+        "generation": 2,
+        "user_text": "订阅多少钱？",
+        "assistant_text": "每月99元。",
+        "asr_finalize_ms": 77.9,
+        "asr_total_compute_ms": 77.7,
+        "llm_first_text_after_end_ms": 131.7,
+        "first_pcm_after_end_ms": 1961.8,
+        "effective_audio_ms": 2183.0,
+        "fixture": 1
+      },
+      {
+        "ok": true,
+        "generation": 3,
+        "user_text": "可以先试用吗？",
+        "assistant_text": "可以先试用，试用期结束后再订阅。",
+        "asr_finalize_ms": 76.4,
+        "asr_total_compute_ms": 76.2,
+        "llm_first_text_after_end_ms": 136.4,
+        "first_pcm_after_end_ms": 2875.3,
+        "effective_audio_ms": 3176.9,
+        "fixture": 2
+      }
+    ],
+    "summary": {
+      "attempted": 3,
+      "successful": 3,
+      "failed": 0,
+      "p50_ms": 2714.6,
+      "p95_ms": 3176.9,
+      "sample_count_warning": "small_sample_not_stability_acceptance"
+    }
+  },
+  "media_server": {
+    "proxy_rtt_ms": [
+      60.9,
+      61.1,
+      61.0,
+      61.4,
+      61.5
+    ],
+    "proxy_rtt_median_ms": 61.1,
+    "scope": "media_server",
+    "samples": [
+      {
+        "type": "done",
+        "ok": true,
+        "generation": 100,
+        "user_text": "他可以做什么？",
+        "assistant_text": "可以整理文档、总结会议、辅助写作；订阅每月99元；支持先试用再订阅。",
+        "asr_finalize_ms": 89.2,
+        "asr_total_compute_ms": 89.0,
+        "llm_first_text_after_end_ms": 139.8,
+        "first_pcm_after_end_ms": 4761.0,
+        "effective_audio_ms": 5333.7,
+        "server_after_end_effective_ms": 4841.0,
+        "fixture": 0
+      },
+      {
+        "type": "done",
+        "ok": true,
+        "generation": 101,
+        "user_text": "订阅多少钱？",
+        "assistant_text": "每月99元。",
+        "asr_finalize_ms": 76.3,
+        "asr_total_compute_ms": 76.1,
+        "llm_first_text_after_end_ms": 130.2,
+        "first_pcm_after_end_ms": 2373.7,
+        "effective_audio_ms": 2864.6,
+        "server_after_end_effective_ms": 2393.7,
+        "fixture": 1
+      },
+      {
+        "type": "done",
+        "ok": true,
+        "generation": 102,
+        "user_text": "可以先试用吗？",
+        "assistant_text": "可以先试用，试用期结束后再订阅。",
+        "asr_finalize_ms": 93.2,
+        "asr_total_compute_ms": 92.9,
+        "llm_first_text_after_end_ms": 144.4,
+        "first_pcm_after_end_ms": 3113.6,
+        "effective_audio_ms": 3741.8,
+        "server_after_end_effective_ms": 3253.6,
+        "fixture": 2
+      }
+    ],
+    "summary": {
+      "attempted": 3,
+      "successful": 3,
+      "failed": 0,
+      "p50_ms": 3741.8,
+      "p95_ms": 5333.7,
+      "sample_count_warning": "small_sample_not_stability_acceptance"
+    },
+    "endpointing": "simulated_wait_not_real_vad",
+    "endpoint_wait_ms": 200,
+    "warmup": "fixture_tts_prepared_before_first_sample",
+    "fixture_source": "synthetic_tts_not_real_caller"
+  },
+  "limitations": [
+    "three_samples_per_path_not_stability_acceptance",
+    "synthetic_input_not_real_speech_accuracy_evaluation",
+    "simulated_endpointing_not_real_vad",
+    "memory_playback_not_browser_phone_or_physical_audio_device",
+    "no_vllm_or_tensorrt_acceleration",
+    "interruptions_concurrency_and_subjective_voice_quality_not_verified"
+  ]
+}
