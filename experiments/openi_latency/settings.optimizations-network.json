@@ -1,0 +1,128 @@
+{
+  "pip_index_url": "https://mirrors.aliyun.com/pypi/simple",
+  "torch_version": "2.6.0",
+  "python_candidates": [
+    "python3.10",
+    "/opt/*/bin/python",
+    "/root/*/bin/python",
+    "/root/*/envs/*/bin/python",
+    "/usr/local/bin/python",
+    "python3"
+  ],
+  "system_prompt": "你是测试产品的电话顾问。以下均为虚构测试资料：团队助手可以整理文档、总结会议、辅助写作；订阅每月99元；支持先试用再订阅。只依据这些资料回答，未知内容直接说明。用自然中文和短句，直接回答当前问题，先给出有效信息，不用嗯、好的等填充语拖延。每次一至两句话，不输出思考、标题或内部标记，不调查用户使用习惯。",
+  "questions": [
+    "它可以做什么？",
+    "订阅多少钱？",
+    "可以先试用吗？"
+  ],
+  "endpoint_wait_ms": 200,
+  "generation_timeout_seconds": 30,
+  "max_audio_seconds": 20,
+  "lifetime_seconds": 7200,
+  "token_sha256": "",
+  "max_turns": 70,
+  "model_backend": "minicpm_o45",
+  "worker_environment": "/tmp/llmautotel-omni-worker",
+  "omni_mounted_model": "MiniCPM-o-4.5",
+  "omni_mounted_subdirectory": "MiniCPM-o-4_5",
+  "omni_model_directory": "/tmp/llmautotel-omni-model",
+  "omni_source_archive": "minicpm-o45-source.tar.gz",
+  "omni_source_archive_sha256": "6a80d0b2a0b8752b2e163c0db701867098d92398f5e0473942be26266e37e958",
+  "omni_source_revision": "fb09628e98b1f55d8d5b863e0eccfcdd11bff499",
+  "omni_reference_audio": "assets/audio_cases/minicpm_assistant__system_ref_audio.wav",
+  "omni_voice_instruction": "模仿输入音频中的声音特征。",
+  "omni_tts_fp16": true,
+  "omni_generation_options": {
+    "do_sample": false,
+    "length_penalty": 1.1
+  },
+  "fixture_instruction": "请只朗读指定文字，不添加任何其他内容。",
+  "model_prepare_timeout_seconds": 7200,
+  "asset_prepare_timeout_seconds": 7200,
+  "dependency_prepare_timeout_seconds": 7200,
+  "omni_assets": [
+    {
+      "path": "assets/token2wav/campplus.onnx",
+      "bytes": 28303423,
+      "sha256": "a6ac6a63997761ae2997373e2ee1c47040854b4b759ea41ec48e4e42df0f4d73"
+    },
+    {
+      "path": "assets/token2wav/flow.pt",
+      "bytes": 623466603,
+      "sha256": "15ccff24256ff61537c7f8b51e025116b83405f3fb017b54b008fc97da115446"
+    },
+    {
+      "path": "assets/token2wav/flow.yaml",
+      "bytes": 1099,
+      "sha256": "723295d37bf11f5f1b896ca4f2f4c81ebc2fbb3e51b753c2507ef8461c751486"
+    },
+    {
+      "path": "assets/token2wav/hift.pt",
+      "bytes": 83390254,
+      "sha256": "3386cc880324d4e98e05987b99107f49e40ed925b8ecc87c1f4939432d429879"
+    },
+    {
+      "path": "assets/token2wav/speech_tokenizer_v2_25hz.onnx",
+      "bytes": 496082973,
+      "sha256": "d43342aa12163a80bf07bffb94c9de2e120a8df2f9917cd2f642e7f4219c6f71"
+    }
+  ],
+  "asset_request_timeout_seconds": 120,
+  "asset_download_chunk_bytes": 4194304,
+  "asset_progress_interval_seconds": 15,
+  "asset_sources": [
+    {
+      "url_template": "https://modelscope.cn/api/v1/models/OpenBMB/MiniCPM-o-4_5/repo?Revision={revision}&FilePath={path}",
+      "revision": "57e2a63b47677b063558c717054de405d88a43d1"
+    },
+    {
+      "url_template": "https://hf-mirror.com/openbmb/MiniCPM-o-4_5/resolve/{revision}/{path}",
+      "revision": "fb09628e98b1f55d8d5b863e0eccfcdd11bff499"
+    }
+  ],
+  "prepare_timeout_seconds": 7200,
+  "optimization_suite": true,
+  "optimization_warmup_text": "它可以整理文档。",
+  "optimization_silence_filter": {
+    "keep_ms": 40,
+    "max_trim_ms": 400,
+    "threshold": 100
+  },
+  "optimization_compile": {
+    "timeout_seconds": 1800,
+    "warmups": 2,
+    "llm": {
+      "dynamic": true,
+      "options": {
+        "triton.cudagraphs": false
+      }
+    },
+    "estimator": {
+      "dynamic": true,
+      "options": {
+        "triton.cudagraphs": false
+      }
+    }
+  },
+  "optimization_cached_replies": [
+    "它可以整理文档、总结会议、辅助写作。",
+    "订阅每月99元。",
+    "支持先试用再订阅。"
+  ],
+  "optimization_variants": {
+    "baseline": {},
+    "endpoint100": {
+      "trim": true,
+      "audio_tokens": 8,
+      "text_tokens": 3,
+      "endpoint_wait_ms": 100
+    },
+    "chunk12": {
+      "trim": true,
+      "audio_tokens": 12,
+      "text_tokens": 4,
+      "endpoint_wait_ms": 100
+    }
+  },
+  "optimization_seed": 17
+}
