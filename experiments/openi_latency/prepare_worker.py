@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import glob
+import hashlib
 import json
 import os
 import shutil
 import subprocess
+import tarfile
 from pathlib import Path
 from typing import Any
 
@@ -57,10 +59,39 @@ def image_requirements(lock: str) -> str:
     return "\n".join(requirements) + "\n"
 
 
+def prepare_source(root: Path, config: dict[str, Any]) -> None:
+    """可先在本机打包已锁定的源码，避免 GPU 空等 GitHub 克隆。"""
+    source = root / "CosyVoice"
+    if archive_name := config.get("source_archive"):
+        archive = root / archive_name
+        digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+        if digest != config.get("source_archive_sha256"):
+            raise ValueError("source_archive_checksum_mismatch")
+        with tarfile.open(archive) as bundle:
+            bundle.extractall(root, filter="data")
+        if not (source / "third_party/Matcha-TTS/matcha").is_dir():
+            raise ValueError("source_archive_missing_matcha")
+        print(f"source_archive_verified {digest}", flush=True)
+        return
+    subprocess.run(
+        ["git", "clone", config["cosyvoice_source"], str(source)], check=True, timeout=180
+    )
+    subprocess.run(
+        ["git", "checkout", config["cosyvoice_revision"]], cwd=source, check=True, timeout=30
+    )
+    subprocess.run(
+        ["git", "submodule", "update", "--init", "--recursive", "--depth", "1"],
+        cwd=source,
+        check=True,
+        timeout=180,
+    )
+
+
 def main() -> None:
     root = Path(__file__).resolve().parent
     config = json.loads((root / "settings.run.json").read_text())
-    environment = root / ".worker-env"
+    environment = Path(config.get("worker_environment", str(root / ".worker-env")))
+    prepare_source(root, config)
     selected = image_python(config)
     subprocess.run(
         [selected, "-m", "venv", "--system-site-packages", str(environment)],
@@ -93,16 +124,6 @@ def main() -> None:
         check=True,
         timeout=1500,
     )
-    source = root / "CosyVoice"
-    subprocess.run(
-        ["git", "clone", config["cosyvoice_source"], str(source)], check=True, timeout=180
-    )
-    subprocess.run(
-        ["git", "checkout", config["cosyvoice_revision"]], cwd=source, check=True, timeout=30
-    )
-    subprocess.run(
-        ["git", "submodule", "update", "--init", "--recursive"], cwd=source, check=True, timeout=180
-    )
     os.environ.setdefault("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", "1")
     os.environ.setdefault("OMP_NUM_THREADS", "4")
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
@@ -110,4 +131,14 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as exc:
+        print(
+            "OPENI_EVENT:"
+            + json.dumps(
+                {"type": "error", "phase": "model_initialization_failed", "detail": str(exc)[:400]}
+            ),
+            flush=True,
+        )
+        raise

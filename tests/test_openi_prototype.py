@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import struct
+import tarfile
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -13,7 +16,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from experiments.openi_latency.client import wait_ready
 from experiments.openi_latency.gateway import create_app
-from experiments.openi_latency.prepare_worker import image_requirements
+from experiments.openi_latency.prepare_worker import image_requirements, prepare_source
 from experiments.openi_latency.protocol import (
     PlaybackClock,
     signal_offset_ms,
@@ -95,3 +98,23 @@ def test_verified_image_stack_is_not_downloaded_again() -> None:
         "triton==3.2.0\nfunasr==1.4.19\n"
     )
     assert image_requirements(lock) == "funasr==1.4.19\n"
+
+
+def test_prepacked_source_is_verified_and_needs_no_git(tmp_path: Path) -> None:
+    archive = tmp_path / "source.tar.gz"
+    with tarfile.open(archive, "w:gz") as bundle:
+        directory = tarfile.TarInfo("CosyVoice/third_party/Matcha-TTS/matcha")
+        directory.type = tarfile.DIRTYPE
+        bundle.addfile(directory)
+        member = tarfile.TarInfo("CosyVoice/source-revisions.json")
+        member.size = 2
+        bundle.addfile(member, io.BytesIO(b"{}"))
+    config = {
+        "source_archive": archive.name,
+        "source_archive_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
+    }
+    prepare_source(tmp_path, config)
+    assert (tmp_path / "CosyVoice/source-revisions.json").read_text() == "{}"
+    config["source_archive_sha256"] = "wrong"
+    with pytest.raises(ValueError, match="checksum_mismatch"):
+        prepare_source(tmp_path, config)

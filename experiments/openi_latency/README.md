@@ -12,6 +12,10 @@
 
 模型准备阶段先从 `python_candidates` 寻找并验证镜像自带的 Torch/CUDA 环境。平台启动器的 Python 可能与镜像标签不同，不能直接据标签认定运行版本。验证 Torch、Torchaudio 版本及实际 CUDA 运算成功后，继承镜像的 GPU 库，其余 Python 依赖按锁文件安装；找不到符合配置的环境立即失败，避免重新下载整套 Torch/CUDA。最终以实测报告中的版本为准。
 
+默认附带 `cosyvoice-source.tar.gz`，启动前验证配置中的 SHA-256，包含锁定版本的 CosyVoice 运行源码、Matcha-TTS 子模块、上游示例参考音频和许可证。这样无需占用 GPU 等待 GitHub 克隆。CosyVoice 使用 Apache-2.0，Matcha-TTS 使用 MIT；来源提交记录在包内 `CosyVoice/source-revisions.json`，来源链接见本文末尾。更新源码时必须重新构建源码包、核对许可证并更新散列，不能只修改版本字段。将 `source_archive` 留空时仍支持原来的 Git 获取方式。
+
+模型虚拟环境默认建在容器本地 `/tmp/llmautotel-latency-worker`，避免向平台挂载的代码目录拷贝大量 Python 包；可用 `worker_environment` 修改。源码包校验失败与依赖准备失败会直接报告初始化失败，不会继续等待模型就绪。
+
 ```sh
 uv run python experiments/openi_latency/client.py --url "$OPENI_URL" \
   --token-file data/openi-token --mode probe
@@ -49,3 +53,9 @@ uv run ruff check experiments/openi_latency tests/test_openi_prototype.py
 ```
 
 官方源码：[FunASR](https://github.com/modelscope/FunASR)、[CosyVoice](https://github.com/FunAudioLLM/CosyVoice)、[Qwen3](https://github.com/QwenLM/Qwen3)。本机没有 NVIDIA GPU，不把单元测试结果写成模型延迟。
+
+## 2026-11-15 初始化与网络记录
+
+前两次初始化尝试分别遇到整套 GPU 依赖下载超时、TTS 子模块 Git 克隆超时，未得到完整语音回复样本；对应任务均已停止。第二次已完成 129 个依赖包安装，进一步定位了 GitHub 子模块获取的问题，现使用上述预打包源码规避。
+
+第二次任务的服务器→OpenI 官方代理 WebSocket 往返为 42.8、42.2、42.7、42.3、42.8 ms，中位数 42.7 ms。这仅说明该路径的小消息往返开销，不包含 ASR、LLM、TTS、音频编码和播放，不能作为 1 秒语音验收结果。后续完整样本须单独记录。
