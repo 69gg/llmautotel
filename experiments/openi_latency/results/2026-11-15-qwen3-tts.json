@@ -1,0 +1,270 @@
+{
+  "date": "2026-11-15",
+  "scope": "fixed_text_tts_not_end_to_end",
+  "gpu_run": {
+    "task_id": 935142,
+    "code_commit": "dc9eb1b565",
+    "status": "STOPPED",
+    "points_per_hour": 9,
+    "created_at": "2026-11-15T20:09:28+08:00",
+    "started_at": "2026-11-15T20:10:45+08:00",
+    "ended_at": "2026-11-15T20:14:05+08:00",
+    "running_seconds": 200,
+    "estimated_points": 0.5,
+    "stopped_verified_in_platform": true,
+    "url": "https://f3ba24709027463b.mlunotebook.openi.org.cn"
+  },
+  "preparation_run": {
+    "task_id": 935107,
+    "code_commit": "152b3dd115",
+    "started_at": "2026-11-15T19:12:55+08:00",
+    "status": "STOPPED",
+    "points_per_hour": 9,
+    "url": "https://wde31089db76432b.mlunotebook.openi.org.cn",
+    "ended_at": "2026-11-15T20:07:55+08:00",
+    "running_seconds": 3300,
+    "estimated_points": 8.25,
+    "stopped_verified_in_platform": true,
+    "failure": "dependency_mirror_fastapi_unavailable_no_latency_samples",
+    "weights_verified": true,
+    "cache_image": "voice-qwen3-weights-20261115"
+  },
+  "measurements": {
+    "proxy_rtt_ms": [
+      40.5,
+      40.6,
+      40.4,
+      40.3,
+      40.0
+    ],
+    "proxy_rtt_median_ms": 40.4,
+    "type": "report",
+    "scope": "fixed_text_tts_not_end_to_end",
+    "variants": [
+      {
+        "variant": {
+          "name": "eager8",
+          "chunk_size": 8,
+          "parity_mode": true,
+          "trim": false
+        },
+        "samples": [
+          {
+            "ok": true,
+            "text": "它可以整理文档、总结会议、辅助写作。",
+            "effective_audio_ms": 1552.1,
+            "first_pcm_ms": 1092.1,
+            "total_ms": 6565.4,
+            "audio_bytes": 195840,
+            "chunks": 7,
+            "trimmed_ms": 0.0,
+            "gpu_peak_bytes": 2446842880
+          },
+          {
+            "ok": true,
+            "text": "订阅每月99元。",
+            "effective_audio_ms": 1466.3,
+            "first_pcm_ms": 1046.3,
+            "total_ms": 4181.7,
+            "audio_bytes": 126720,
+            "chunks": 5,
+            "trimmed_ms": 0.0,
+            "gpu_peak_bytes": 2446842880
+          },
+          {
+            "ok": true,
+            "text": "支持先试用再订阅。",
+            "effective_audio_ms": 1541.5,
+            "first_pcm_ms": 1041.5,
+            "total_ms": 3540.8,
+            "audio_bytes": 107520,
+            "chunks": 4,
+            "trimmed_ms": 0.0,
+            "gpu_peak_bytes": 2446842880
+          }
+        ],
+        "summary": {
+          "attempted": 3,
+          "successful": 3,
+          "failed": 0,
+          "p50_ms": 1541.5,
+          "p95_ms": 1552.1,
+          "sample_count_warning": "small_sample_not_stability_acceptance"
+        }
+      },
+      {
+        "variant": {
+          "name": "graph8",
+          "chunk_size": 8,
+          "parity_mode": false,
+          "trim": false
+        },
+        "samples": [
+          {
+            "ok": true,
+            "text": "它可以整理文档、总结会议、辅助写作。",
+            "effective_audio_ms": 381.5,
+            "first_pcm_ms": 301.5,
+            "total_ms": 1371.2,
+            "audio_bytes": 195840,
+            "chunks": 7,
+            "trimmed_ms": 0.0,
+            "gpu_peak_bytes": 2446842880
+          },
+          {
+            "ok": true,
+            "text": "订阅每月99元。",
+            "effective_audio_ms": 588.8,
+            "first_pcm_ms": 248.8,
+            "total_ms": 816.5,
+            "audio_bytes": 115200,
+            "chunks": 4,
+            "trimmed_ms": 0.0,
+            "gpu_peak_bytes": 2446842880
+          },
+          {
+            "ok": true,
+            "text": "支持先试用再订阅。",
+            "effective_audio_ms": 607.2,
+            "first_pcm_ms": 247.2,
+            "total_ms": 793.3,
+            "audio_bytes": 115200,
+            "chunks": 4,
+            "trimmed_ms": 0.0,
+            "gpu_peak_bytes": 2446842880
+          }
+        ],
+        "summary": {
+          "attempted": 3,
+          "successful": 3,
+          "failed": 0,
+          "p50_ms": 588.8,
+          "p95_ms": 607.2,
+          "sample_count_warning": "small_sample_not_stability_acceptance"
+        }
+      },
+      {
+        "variant": {
+          "name": "graph4",
+          "chunk_size": 4,
+          "parity_mode": false,
+          "trim": true
+        },
+        "samples": [
+          {
+            "ok": true,
+            "text": "它可以整理文档、总结会议、辅助写作。",
+            "effective_audio_ms": 330.5,
+            "first_pcm_ms": 290.5,
+            "total_ms": 1439.4,
+            "audio_bytes": 174720,
+            "chunks": 12,
+            "trimmed_ms": 280.0,
+            "gpu_peak_bytes": 2446842880
+          },
+          {
+            "ok": true,
+            "text": "订阅每月99元。",
+            "effective_audio_ms": 306.2,
+            "first_pcm_ms": 266.2,
+            "total_ms": 838.6,
+            "audio_bytes": 93120,
+            "chunks": 7,
+            "trimmed_ms": 380.0,
+            "gpu_peak_bytes": 2446842880
+          },
+          {
+            "ok": true,
+            "text": "支持先试用再订阅。",
+            "effective_audio_ms": 305.5,
+            "first_pcm_ms": 265.5,
+            "total_ms": 753.6,
+            "audio_bytes": 83520,
+            "chunks": 6,
+            "trimmed_ms": 340.0,
+            "gpu_peak_bytes": 2446842880
+          }
+        ],
+        "summary": {
+          "attempted": 3,
+          "successful": 3,
+          "failed": 0,
+          "p50_ms": 306.2,
+          "p95_ms": 330.5,
+          "sample_count_warning": "small_sample_not_stability_acceptance"
+        }
+      },
+      {
+        "variant": {
+          "name": "graph2",
+          "chunk_size": 2,
+          "parity_mode": false,
+          "trim": true
+        },
+        "samples": [
+          {
+            "ok": true,
+            "text": "它可以整理文档、总结会议、辅助写作。",
+            "effective_audio_ms": 132.7,
+            "first_pcm_ms": 132.7,
+            "total_ms": 1647.9,
+            "audio_bytes": 180480,
+            "chunks": 24,
+            "trimmed_ms": 0.0,
+            "gpu_peak_bytes": 2446842880
+          },
+          {
+            "ok": true,
+            "text": "订阅每月99元。",
+            "effective_audio_ms": 398.7,
+            "first_pcm_ms": 238.7,
+            "total_ms": 1023.8,
+            "audio_bytes": 99840,
+            "chunks": 14,
+            "trimmed_ms": 400.0,
+            "gpu_peak_bytes": 2446842880
+          },
+          {
+            "ok": true,
+            "text": "支持先试用再订阅。",
+            "effective_audio_ms": 282.6,
+            "first_pcm_ms": 242.6,
+            "total_ms": 922.6,
+            "audio_bytes": 93120,
+            "chunks": 12,
+            "trimmed_ms": 300.0,
+            "gpu_peak_bytes": 2446842880
+          }
+        ],
+        "summary": {
+          "attempted": 3,
+          "successful": 3,
+          "failed": 0,
+          "p50_ms": 282.6,
+          "p95_ms": 398.7,
+          "sample_count_warning": "small_sample_not_stability_acceptance"
+        }
+      }
+    ],
+    "manifest": {
+      "gpu": "NVIDIA A100-PCIE-40GB",
+      "load_and_warmup_ms": 29413.6,
+      "model_revision": "5d83992436eae1d760afd27aff78a71d676296fc",
+      "versions": {
+        "torch": "2.6.0",
+        "transformers": "5.15.1",
+        "qwen-tts-hf": "0.1.1.post1",
+        "faster-qwen3-tts": "0.5.4"
+      },
+      "engine": "third_party_faster_qwen3_tts",
+      "streaming_input": "complete_text_internal_streaming_not_text_iterator"
+    }
+  },
+  "limitations": [
+    "complete text known before synthesis",
+    "single concurrency and 3 samples per variant",
+    "memory playback clock; no listening or real device validation",
+    "graph4/2 include leading silence removal; graph8 does not",
+    "not same session as previous DeepSeek comparison"
+  ]
+}

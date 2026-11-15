@@ -94,3 +94,5 @@ DeepSeek ASR 官方不支持流式识别，仍需用户停口后上传完整 WAV
 没有自动重试或追加多轮采样，账户余额接口前后观察差额为 **0.00 元**；余额显示精度、延迟入账及账户其他活动可能影响观察，不能据此认定免费或精确费用。正式配置与历史行数前后均一致，未保存音频或把测试 Key 写入配置。脱敏 JSON 报告保存在本机 Git 忽略的 `data/deployment-103.52.153.233-latency.json`，权限 `0600`。没有进行浏览器、真实麦克风、外放、耳机或电话验收。
 
 细化实验已准备 `settings.optimizations-refine.json`：固定逐题种子，比较更小实际音频块，并关闭编译器 CUDA Graph；尚未取得 GPU 数据，不纳入达标结论。
+
+Qwen3-TTS0.6B的固定文本单项已实测：CUDA Graph4+裁静音三轮p50 306.2ms、最大330.5ms；Graph2为282.6/398.7ms。不是完整通话达标，尚未听测或验证真实设备。两项GPU均STOPPED，准备与重试估算共8.750积分。详见[实测与费用](../experiments/openi_latency/README.md#2026-11-15-qwen3-tts-单项实测)。
