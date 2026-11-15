@@ -159,7 +159,7 @@ class RemoteVoiceSession:
                 elif kind == "drain":
                     if event["generation"] == self.generation:
                         await self.input.push_frame(TTSStoppedFrame())
-                        frame = TTSTextFrame("")
+                        frame = TTSTextFrame("", aggregated_by="sentence")
                         frame.metadata.update(gpu_drain=event["id"], gpu_generation=self.generation)
                         await self.input.push_frame(frame)
                 elif kind == "audio-start":

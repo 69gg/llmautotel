@@ -179,3 +179,92 @@ def test_real_pipeline_opening_waits_for_playback_and_releases_slot() -> None:
                         assert event["entry"]["text"] == settings.consultation.opening
                         break
     assert len(synthesized) == 2
+
+
+async def test_server_relay_uses_output_queue_discards_stale_audio_and_forwards_history() -> None:
+    import struct
+
+    from websockets.asyncio.server import serve
+
+    from llmautotel.remote_voice import RemoteVoiceSession
+    from llmautotel.telephony.transport import PhoneTransport
+    from llmautotel.voice import VoiceCallbacks
+
+    settings, _ = configuration()
+    errors: list[str] = []
+    history: list[Any] = []
+    played: list[bytes] = []
+    acknowledgements: list[dict[str, Any]] = []
+
+    class Driver:
+        sample_rate = 24000
+
+        def __init__(self, callbacks: MediaCallbacks) -> None:
+            self.callbacks = callbacks
+
+        async def start(self, number: str, call_id: str) -> None:
+            await self.callbacks.on_ready()
+
+        async def send_audio(self, audio: bytes) -> None:
+            played.append(audio)
+
+        async def wait_played(self) -> None:
+            await asyncio.sleep(0.02)
+
+        async def flush(self) -> None:
+            pass
+
+        async def hangup(self) -> None:
+            pass
+
+        async def close(self) -> None:
+            pass
+
+    async def peer(socket: Any) -> None:
+        initial = json.loads(await socket.recv())
+        assert initial["settings"]["voice"]["pipeline"] == "local"
+        assert "telephony" not in initial["settings"]
+        await socket.send(json.dumps({"type": "flush", "generation": 1}))
+        await socket.send(struct.pack("!I", 0) + b"\x22\x22" * 480)
+        await socket.send(json.dumps({"type": "audio-start", "generation": 1}))
+        await socket.send(struct.pack("!I", 1) + b"\x11\x11" * 480)
+        await socket.send(json.dumps({"type": "drain", "generation": 1, "id": "sentence"}))
+        ack = json.loads(await socket.recv())
+        assert played and b"\x22\x22" not in b"".join(played)
+        acknowledgements.append(ack)
+        await socket.send(
+            json.dumps(
+                {
+                    "type": "transcript",
+                    "entry": {
+                        "role": "assistant",
+                        "text": "当前回答。",
+                        "interrupted": False,
+                        "timestamp": "test",
+                    },
+                }
+            )
+        )
+        await socket.send(json.dumps({"type": "ended", "reason": "assistant_hangup"}))
+
+    async def state(value: str) -> None:
+        pass
+
+    async def message(*args: Any) -> None:
+        history.append(args)
+
+    async def error(value: str) -> None:
+        errors.append(value)
+
+    async with serve(peer, "127.0.0.1", 0) as server:
+        port = server.sockets[0].getsockname()[1]
+        settings.llm.base_url = f"http://127.0.0.1:{port}/v1"
+        transport = PhoneTransport(Driver, number="", call_id="relay")
+        session = RemoteVoiceSession(
+            None, settings, VoiceCallbacks(state, message, error), transport=transport
+        )
+        assert await asyncio.wait_for(session.run(), 5) == "assistant_hangup"
+    assert not errors
+    assert history[0][:3] == ("assistant", "当前回答。", False)
+    assert acknowledgements == [{"type": "played", "id": "sentence", "generation": 1}]
+    assert transport.closed
