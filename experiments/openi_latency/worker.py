@@ -190,6 +190,7 @@ class Models:
                         **inputs,
                         streamer=streamer,
                         do_sample=False,
+                        max_length=self.llm.config.max_position_embeddings,
                         stopping_criteria=StoppingCriteriaList([Stop()]),
                     )
             except BaseException as exc:

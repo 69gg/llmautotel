@@ -6,10 +6,12 @@ import hashlib
 import struct
 from typing import Any
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
+from experiments.openi_latency.client import wait_ready
 from experiments.openi_latency.gateway import create_app
 from experiments.openi_latency.protocol import (
     PlaybackClock,
@@ -64,3 +66,23 @@ def test_gateway_requires_token_and_allows_only_one_client() -> None:
                 with pytest.raises(WebSocketDisconnect) as error:
                     second.receive_json()
                 assert error.value.code == 1013
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase", ["ready", "worker_exited", "model_initialization_failed"])
+async def test_initialization_poll_uses_authenticated_http_and_surfaces_failure(phase: str) -> None:
+    def handle(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/status"
+        assert request.headers["Authorization"] == "Bearer test-only-token"
+        return httpx.Response(200, json={"phase": phase, "logs": []})
+
+    async with httpx.AsyncClient(
+        base_url="https://test.invalid",
+        headers={"Authorization": "Bearer test-only-token"},
+        transport=httpx.MockTransport(handle),
+    ) as client:
+        if phase == "ready":
+            assert (await wait_ready(client))["phase"] == "ready"
+        else:
+            with pytest.raises(RuntimeError, match=phase):
+                await wait_ready(client)

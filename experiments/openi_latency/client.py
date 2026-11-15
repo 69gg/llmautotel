@@ -14,7 +14,11 @@ from typing import Any
 
 import httpx
 import websockets
-from protocol import PlaybackClock, summarize
+
+if __package__:
+    from .protocol import PlaybackClock, summarize
+else:
+    from protocol import PlaybackClock, summarize
 
 
 async def event(ws: Any, timeout: float = 1800) -> dict[str, Any]:
@@ -39,6 +43,26 @@ async def until(ws: Any, kind: str) -> dict[str, Any]:
             return item
         if item["type"] in {"status", "sample"}:
             print(json.dumps(item, ensure_ascii=False), flush=True)
+
+
+async def wait_ready(client: httpx.AsyncClient, timeout: float = 1800) -> dict[str, Any]:
+    """长时间初始化使用 HTTP，避免代理关闭闲置的 WebSocket。"""
+    deadline = time.monotonic() + timeout
+    previous = ""
+    while time.monotonic() < deadline:
+        response = await client.get("/status")
+        response.raise_for_status()
+        status = response.json()
+        phase = status["phase"]
+        if phase != previous:
+            print(json.dumps({"phase": phase}, ensure_ascii=False), flush=True)
+            previous = phase
+        if phase == "ready":
+            return status
+        if phase in {"worker_exited", "model_initialization_failed"}:
+            raise RuntimeError(json.dumps(status, ensure_ascii=False))
+        await asyncio.sleep(min(5, max(0, deadline - time.monotonic())))
+    raise TimeoutError("worker_initialization_timeout")
 
 
 async def remote_sample(ws: Any, audio: bytes, generation: int, wait_ms: int) -> dict[str, Any]:
@@ -90,11 +114,15 @@ async def remote_sample(ws: Any, audio: bytes, generation: int, wait_ms: int) ->
 
 async def run(args: argparse.Namespace) -> dict[str, Any]:
     token = Path(args.token_file).read_text().strip()
-    if args.mode == "status":
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.get(
-                args.url.rstrip("/") + "/status", headers={"Authorization": f"Bearer {token}"}
-            )
+    if args.mode in {"status", "wait"}:
+        async with httpx.AsyncClient(
+            base_url=args.url.rstrip("/"),
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30,
+        ) as client:
+            if args.mode == "wait":
+                return await wait_ready(client)
+            response = await client.get("/status")
             response.raise_for_status()
             return response.json()
     endpoint = args.url.rstrip("/").replace("https://", "wss://").replace("http://", "ws://")
@@ -106,10 +134,6 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         if args.mode == "load":
             await ws.send(json.dumps({"type": "load"}))
             return await until(ws, "status")
-        if args.mode == "wait":
-            if hello["phase"] == "ready":
-                return hello
-            return await until(ws, "ready")
         pings: list[float] = []
         for index in range(5):
             start = time.perf_counter()

@@ -18,12 +18,16 @@ uv run python experiments/openi_latency/client.py --url "$OPENI_URL" \
 uv run python experiments/openi_latency/client.py --url "$OPENI_URL" \
   --token-file data/openi-token --mode status
 uv run python experiments/openi_latency/client.py --url "$OPENI_URL" \
+  --token-file data/openi-token --mode wait
+uv run python experiments/openi_latency/client.py --url "$OPENI_URL" \
   --token-file data/openi-token --mode local --repeats 2 --output data/openi-local.json
 uv run python experiments/openi_latency/client.py --url "$OPENI_URL" \
   --token-file data/openi-token --mode remote --repeats 2 --output data/openi-remote.json
 ```
 
 可把客户端和 `protocol.py` 复制到媒体服务器执行 remote，得到服务器与 OpenI 的真实往返及有效首音。代理地址是平台给出的在线推理地址，不能用容器内 IP。
+
+初始化等待使用认证 HTTP 轮询，避免官方代理关闭空闲 WebSocket；只有正式测试占用唯一音频连接。模型输出以 EOS、取消或超时结束，总长度受模型自身上下文窗口限制，避免 Transformers 默认 20 个新 token 截断回复。
 
 ## 计时与局限
 
