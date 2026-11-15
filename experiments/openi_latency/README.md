@@ -224,3 +224,11 @@ OpenI 启动时 ONNX Runtime 提示 CUDA 执行提供者缺少 `libcudnn_adv.so.
 运行 `client.py --mode optimize --repeats 1`；选定方案后可用 `--variant NAME --mode remote` 从媒体服务器复测。所有 GPU 编译、权重和推理仅在 OpenI，本地只运行 `tests/test_openi_optimization.py` 等轻量验证。每批结束通过平台停止任务并核实 STOPPED；没有设备播放或真实 VAD 验收前，结果仅为内存播放口径。
 
 首次矩阵初始化中，Torch `inference_mode` 装饰器使 `getsource()` 返回原方法、`__globals__` 却仍属于装饰器模块，动态方法绑定报 `NameError: torch`。现同时通过 `inspect.unwrap()` 获取源码和命名空间，并补充外部装饰器命名空间回归测试；失败任务不计入延迟样本。
+
+## Qwen3-TTS 0.6B 流式声学对照
+
+独立实验入口使用 settings.qwen3.json，隔离 Transformers 5 环境，不替换 Omni 环境。使用 Qwen 官方 Base 0.6B 权重及锁定版本的第三方 faster-qwen3-tts 0.5.4，分别比较 eager、CUDA Graph 和 8/4/2 个 codec token 的实际 PCM 块。权重仅在 OpenI 从国内镜像断点下载，按已锁定 SHA256 验证；本机不下载权重或运行模型。官方公开参考音来自已有实验镜像，不使用真人客户音频。
+
+这是完整文本输入后的流式 PCM，不是可持续追加未知文字的双流，也不是完整 ASR→LLM→TTS 验收。参考音色和 CUDA Graph 预热时间单列；逐条报告有效首音、首 PCM、完整生成耗时、实际字节数及失败。小块可能改变音质，未听测前不承诺质量。与此前 DeepSeek TTS 只能对比固定文本有效首音，不能直接比较端到端延迟。
+
+轻量测试 test_openi_qwen3.py 用模拟流验证前导静音真实影响、裁剪后的实际字节及失败继续行为，不在本机导入 Torch 或加载权重。

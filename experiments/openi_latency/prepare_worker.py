@@ -90,6 +90,11 @@ def prepare_source(root: Path, config: dict[str, Any]) -> None:
 def main() -> None:
     root = Path(__file__).resolve().parent
     config = json.loads((root / "settings.run.json").read_text())
+    if config.get("model_backend") == "qwen3_tts":
+        from prepare_qwen3 import prepare
+
+        prepare(root, config)
+        return
     if config.get("model_backend") == "minicpm_o45":
         from prepare_omni import prepare
 
