@@ -102,6 +102,8 @@ async def remote_sample(ws: Any, audio: bytes, generation: int, wait_ms: int) ->
             elif item["type"] == "done":
                 result = {**item, "server_after_end_effective_ms": item["effective_audio_ms"]}
                 result["ok"] = clock.first_signal_at is not None
+                result["playback_starvation_ms"] = round(clock.starvation_seconds * 1000, 1)
+                result["playback_starvation_events"] = clock.starvation_events
                 result["effective_audio_ms"] = (
                     round((clock.first_signal_at - stopped) * 1000, 1)
                     if clock.first_signal_at is not None

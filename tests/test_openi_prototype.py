@@ -50,6 +50,22 @@ def test_summary_keeps_failure_count() -> None:
         trim_silence(b"\0\0" * 100, 16000)
 
 
+def test_playback_starvation_counts_only_empty_queue_after_first_signal() -> None:
+    clock = PlaybackClock()
+    speech = struct.pack("<h", 1000) * 1600
+    clock.feed(bytes(3200), 16000, 1)
+    clock.feed(speech, 16000, 2)
+    assert clock.starvation_events == 0
+    clock.feed(speech, 16000, 2.25)
+    assert clock.starvation_seconds == pytest.approx(0.15)
+    assert clock.starvation_events == 1
+    clock.feed(speech, 16000, 2.3)
+    assert clock.starvation_events == 1
+    clock.feed(b"", 16000, 3)
+    assert clock.queued_until == pytest.approx(2.45)
+    assert clock.starvation_events == 1
+
+
 def test_gateway_requires_token_and_allows_only_one_client() -> None:
     config: dict[str, Any] = {
         "token_sha256": hashlib.sha256(b"test-only-token").hexdigest(),

@@ -36,9 +36,16 @@ class PlaybackClock:
 
     queued_until: float = 0.0
     first_signal_at: float | None = None
+    starvation_seconds: float = 0.0
+    starvation_events: int = 0
 
     def feed(self, pcm: bytes, sample_rate: int, received_at: float) -> None:
         offset = signal_offset_ms(pcm, sample_rate)
+        if not pcm:
+            return
+        if self.first_signal_at is not None and received_at > self.queued_until:
+            self.starvation_seconds += received_at - self.queued_until
+            self.starvation_events += 1
         starts = max(received_at, self.queued_until)
         if self.first_signal_at is None and offset is not None:
             self.first_signal_at = starts + offset / 1000
