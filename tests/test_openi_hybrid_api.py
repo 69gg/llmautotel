@@ -8,6 +8,7 @@ import io
 import json
 import struct
 import threading
+import time
 import wave
 from collections.abc import Iterator
 from pathlib import Path
@@ -16,7 +17,88 @@ from typing import Any
 import httpx
 import pytest
 
-from experiments.openi_latency.hybrid_api import ToolDecoder, bridge, create_app, wav_pcm
+from experiments.openi_latency.hybrid_api import (
+    FirstAudioPriority,
+    ModelAPI,
+    ToolDecoder,
+    bridge,
+    create_app,
+    wav_pcm,
+)
+
+
+def test_first_audio_priority_pauses_decode_and_releases_idempotently() -> None:
+    priority = FirstAudioPriority(True)
+    entered, done = threading.Event(), threading.Event()
+
+    def decode() -> None:
+        entered.set()
+        assert not priority.wait(lambda: False)
+        done.set()
+
+    with priority.hold() as release:
+        worker = threading.Thread(target=decode)
+        worker.start()
+        assert entered.wait(1)
+        assert not done.wait(0.05)
+        release()
+        release()
+        assert done.wait(1)
+    worker.join(1)
+    assert not worker.is_alive()
+    assert not priority.wait(lambda: False)
+
+
+def test_priority_cancellation_deadline_nested_holds_and_legacy_mode() -> None:
+    priority = FirstAudioPriority(True)
+    with priority.hold(), priority.hold():
+        deadline = time.monotonic() + 0.05
+        assert priority.wait(lambda: time.monotonic() >= deadline)
+    assert not priority.wait(lambda: False)
+    legacy = FirstAudioPriority(False)
+    with legacy.hold():
+        assert not legacy.wait(lambda: False)
+
+
+@pytest.mark.parametrize("outcome", ["success", "error", "empty", "cancelled"])
+def test_speech_releases_priority_before_delivery_and_on_all_exit_paths(
+    monkeypatch: pytest.MonkeyPatch, outcome: str
+) -> None:
+    from types import SimpleNamespace
+
+    from experiments.openi_latency import hybrid_worker
+
+    cancelled = threading.Event()
+    api = ModelAPI(SimpleNamespace(tts=None), {"service_tts_first_audio_priority": True})
+
+    class FakePCM:
+        def __init__(self, *args: Any) -> None:
+            pass
+
+        def generate(self, text: str) -> Iterator[bytes]:
+            assert api.first_audio.wait(lambda: True)
+            if outcome == "error":
+                raise ValueError("fixture_error")
+            if outcome == "empty":
+                return
+            if outcome == "cancelled":
+                cancelled.set()
+            yield b""
+            yield b"\x01\x02"
+
+    monkeypatch.setattr(hybrid_worker, "QwenPCM", FakePCM)
+    stream = api.speech("测试首音。", cancelled)
+    if outcome == "error":
+        with pytest.raises(ValueError, match="fixture_error"):
+            next(stream)
+    elif outcome == "success":
+        assert next(stream) == b"\x01\x02"
+        # 下游尚未消费完流，LLM 已可继续；不能持有优先级等播放结束。
+        assert not api.first_audio.wait(lambda: False)
+    else:
+        assert list(stream) == []
+    stream.close()
+    assert not api.first_audio.wait(lambda: False)
 
 
 def config() -> dict[str, Any]:

@@ -1,5 +1,7 @@
 # OpenI 语音延迟原型（实验）
 
+常驻服务模板 `settings.service.json` 启用 `service_tts_first_audio_priority`：每段 TTS 首个非空 PCM 生成前暂停 LLM 的后续 token 解码，首块交付前恢复；可关闭作同链路对照。取消、超时、异常和无输出均释放等待，不改变打断、上下文或挂断规则。该策略只调度后续解码，不能抢占已提交的 GPU 算子。服务需更新代码并重启；测量仍以停口到有效音频为准。
+
 独立于正式语音应用，验证一张 NVIDIA GPU 同机运行 ASR、文本 LLM 和 TTS 或原生 Omni 语音模型的延迟，使用 OpenI 官方在线推理代理传输 WebSocket，不使用隧道或端口穿透，不修改正式配置、历史和线路。已测配置包括 `settings.station.json` 的 SenseVoiceSmall、Qwen3-1.7B 和 CosyVoice3，以及 `settings.omni.json` 的 MiniCPM-o 4.5；原来的流式 Paraformer 与 Qwen3-4B 配置保留在 `settings.json`。源代码与 Python 依赖均锁定版本。
 
 这是选型原型，尚未接正式 Pipecat 管线、真实 VAD、电话、浏览器音频与连续对话。问题为内存中生成的合成语音，产品资料为虚构测试资料。这里的通过不等于正式通话验收。

@@ -24,9 +24,15 @@ from llmautotel.conversation import INTERRUPTED_BACKGROUND_LABEL
 
 def chinese_speech_boundary(text: str, character: str, min_chars: int | None) -> bool:
     """中文句末立即释放；首段可选足够长的中文分句，避免拆开金额。"""
-    return character in "。！？" or (
-        min_chars is not None and character in "，；" and len(text.strip()) >= min_chars
-    )
+    if character in "。！？":
+        return True
+    if min_chars is None or len(text.strip()) < min_chars:
+        return False
+    if character == "、":
+        # 数字、英文缩写或型号的并列项保持完整，例如 19.01、B8、B9。
+        previous = text.rstrip()[:-1].rstrip()
+        return bool(previous) and not (previous[-1].isascii() and previous[-1].isalnum())
+    return character in "，；"
 
 
 class FirstClauseTextAggregator(SimpleTextAggregator):

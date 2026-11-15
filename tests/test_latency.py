@@ -52,6 +52,20 @@ async def test_long_unpunctuated_reply_is_not_cut_arbitrarily_and_english_uses_t
     assert result is not None and result.text == "The price is 19.01, paid monthly."
 
 
+async def test_first_list_clause_emits_early_but_preserves_numeric_model_lists() -> None:
+    aggregator = FirstClauseTextAggregator(min_chars=8)
+    assert await aggregate(aggregator, "它可以帮您整理文档、") == ["它可以帮您整理文档、"]
+    assert await aggregate(aggregator, "总结会议、辅助写作。") == ["总结会议、辅助写作。"]
+    assert await aggregator.flush() is None
+    assert await aggregate(aggregator, "可选车型包括B8、B9、") == []
+    assert await aggregate(aggregator, "还有其他型号。") == ["可选车型包括B8、B9、还有其他型号。"]
+    assert await aggregator.flush() is None
+    assert await aggregate(aggregator, "价格可以选择19.01、32.00、") == []
+    assert await aggregate(aggregator, "具体以资料为准。") == [
+        "价格可以选择19.01、32.00、具体以资料为准。"
+    ]
+
+
 async def test_interruption_discards_buffer_and_rearms_first_clause_for_next_response() -> None:
     aggregator = FirstClauseTextAggregator(min_chars=8)
     assert await aggregate(aggregator, "首个回复有足够长度，") == ["首个回复有足够长度，"]

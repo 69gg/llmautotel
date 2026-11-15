@@ -145,10 +145,48 @@ async def bridge(
         cancelled.set()
 
 
+class FirstAudioPriority:
+    """只在首块音频合成期间暂停后续文本解码，不抢占已运行的 GPU 算子。"""
+
+    def __init__(self, enabled: bool) -> None:
+        self.enabled = enabled
+        self._condition = threading.Condition()
+        self._pending = 0
+
+    @contextmanager
+    def hold(self) -> Iterator[Callable[[], None]]:
+        released = False
+
+        def release() -> None:
+            nonlocal released
+            with self._condition:
+                if not released:
+                    released = True
+                    self._pending -= 1
+                    self._condition.notify_all()
+
+        with self._condition:
+            self._pending += 1
+        try:
+            yield release
+        finally:
+            release()
+
+    def wait(self, stopped: Callable[[], bool]) -> bool:
+        """返回是否应停止生成；轮询取消与原请求截止时间。"""
+        with self._condition:
+            while self.enabled and self._pending:
+                if stopped():
+                    return True
+                self._condition.wait(timeout=0.02)
+            return stopped()
+
+
 class ModelAPI:
     def __init__(self, models: Any, config: dict[str, Any]) -> None:
         self.models, self.config = models, config
         self.locks = {stage: threading.Lock() for stage in ("asr", "llm", "tts")}
+        self.first_audio = FirstAudioPriority(config.get("service_tts_first_audio_priority", False))
 
     def transcribe(self, pcm: bytes, cancelled: threading.Event) -> Iterator[str]:
         with acquired(self.locks["asr"], cancelled):
@@ -161,7 +199,13 @@ class ModelAPI:
         else:
             from hybrid_worker import QwenPCM
         with acquired(self.locks["tts"], cancelled):
-            yield from QwenPCM(self.models.tts, self.config, cancelled).generate(text)
+            with self.first_audio.hold() as release:
+                for pcm in QwenPCM(self.models.tts, self.config, cancelled).generate(text):
+                    if cancelled.is_set():
+                        return
+                    if pcm:
+                        release()
+                        yield pcm
 
     def chat(self, body: dict[str, Any], cancelled: threading.Event) -> Iterator[dict[str, Any]]:
         from transformers import StoppingCriteria, StoppingCriteriaList, TextIteratorStreamer
@@ -187,14 +231,18 @@ class ModelAPI:
                 raise ValueError("context_budget_exceeded")
             deadline = time.monotonic() + self.config["generation_timeout_seconds"]
             generation_stop = threading.Event()
+            priority = self.first_audio
+
+            def stopped() -> bool:
+                return (
+                    cancelled.is_set()
+                    or generation_stop.is_set()
+                    or time.monotonic() >= deadline
+                )
 
             class Stop(StoppingCriteria):
                 def __call__(self, input_ids: Any, scores: Any, **kwargs: Any) -> bool:
-                    return (
-                        cancelled.is_set()
-                        or generation_stop.is_set()
-                        or time.monotonic() >= deadline
-                    )
+                    return priority.wait(stopped)
 
             streamer = TextIteratorStreamer(
                 self.models.tokenizer,
