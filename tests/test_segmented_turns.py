@@ -81,7 +81,9 @@ async def test_slow_fifo_asr_waits_for_latest_segment_before_one_llm_response(
     )
     services = SegmentServices(stt, ControlledLLM(block_first=False), ControlledTTS())
     monkeypatch.setattr(voice_module, "create_services", lambda settings: services)
-    monkeypatch.setattr(voice_module, "SmallWebRTCTransport", lambda **kwargs: transport)
+    monkeypatch.setattr(
+        "pipecat.transports.smallwebrtc.transport.SmallWebRTCTransport", lambda **kwargs: transport
+    )
     settings = AppSettings()
     settings.sales.goal = "介绍订阅"
     settings.sales.product_info = "每月十元，支持退款"

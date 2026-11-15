@@ -111,8 +111,9 @@ class TTSSettings(ProviderSettings):
 
 
 class VoiceSettings(StrictModel):
+    pipeline: Literal["local", "gpu"] = "local"
     vad_start_seconds: float = Field(default=0.1, ge=0.05, le=1)
-    vad_stop_seconds: float = Field(default=0.3, ge=0.2, le=3)
+    vad_stop_seconds: float = Field(default=0.3, ge=0.1, le=3)
     vad_confidence: float = Field(default=0.7, gt=0, lt=1)
     response_chunking: Literal["first_clause", "sentence"] = "first_clause"
     first_clause_min_chars: int = Field(default=8, ge=4, le=40)

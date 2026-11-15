@@ -269,6 +269,12 @@ def create_app(config: dict[str, Any], backend: Any) -> FastAPI:
             await asyncio.to_thread(process.wait, 10)
 
     app = FastAPI(title="LLMAutoTel GPU models", lifespan=lifespan, docs_url=None, redoc_url=None)
+    if config.get("serve_realtime", False):
+        if __package__:
+            from .realtime_service import attach_realtime
+        else:
+            from realtime_service import attach_realtime
+        attach_realtime(app, config, backend)
     ids = {
         "asr": config["asr_model"],
         "llm": config["llm_model"],

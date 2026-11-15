@@ -50,7 +50,10 @@ class PhoneInputTransport(BaseInputTransport):
     async def receive(self, audio: bytes, sample_rate: int) -> None:
         if self._owner.closed or not self._owner.ready or not audio:
             return
-        if len(audio) % 2 or sample_rate != self._owner.driver.sample_rate:
+        input_rate = getattr(
+            self._owner.driver, "input_sample_rate", self._owner.driver.sample_rate
+        )
+        if len(audio) % 2 or sample_rate != input_rate:
             await self._owner.fail("电话输入音频格式或采样率无效。")
             return
         pcm = await self._resampler.resample(audio, sample_rate, self.sample_rate)

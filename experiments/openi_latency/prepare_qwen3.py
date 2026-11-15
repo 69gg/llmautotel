@@ -66,6 +66,24 @@ def prepare(root: Path, config: dict[str, Any]) -> None:
         check=True,
         timeout=config["dependency_prepare_timeout_seconds"],
     )
+    if config.get("serve_realtime", False):
+        subprocess.run(
+            [
+                str(environment / "bin/uv"),
+                "pip",
+                "install",
+                "--python",
+                str(python),
+                "--index-url",
+                config["pip_index_url"],
+                "--no-deps",
+                "-r",
+                str(root / "requirements-realtime.lock"),
+            ],
+            check=True,
+            timeout=config["dependency_prepare_timeout_seconds"],
+        )
+        os.environ["PYTHONPATH"] = str(root / "app_src")
     os.environ.update(
         HF_HUB_OFFLINE="1",
         TRANSFORMERS_OFFLINE="1",

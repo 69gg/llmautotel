@@ -253,7 +253,9 @@ async def start_session(
         ControlledTTS(block_first=tts_block_first),
     )
     monkeypatch.setattr(voice_module, "create_services", lambda settings: services)
-    monkeypatch.setattr(voice_module, "SmallWebRTCTransport", lambda **kwargs: transport)
+    monkeypatch.setattr(
+        "pipecat.transports.smallwebrtc.transport.SmallWebRTCTransport", lambda **kwargs: transport
+    )
     settings = AppSettings()
     settings.conversation.mode = conversation_mode
     settings.sales.goal = "让用户订阅测试计划"

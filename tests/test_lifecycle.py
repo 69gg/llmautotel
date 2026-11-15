@@ -135,7 +135,9 @@ async def test_manager_hangup_commits_final_played_sentence_from_real_pipeline(
     transport = LocalTransport(recorder)
     services = FixtureServices(Passthrough(), ControlledLLM(block_first=True), ControlledTTS())
     monkeypatch.setattr(voice_module, "create_services", lambda settings: services)
-    monkeypatch.setattr(voice_module, "SmallWebRTCTransport", lambda **kwargs: transport)
+    monkeypatch.setattr(
+        "pipecat.transports.smallwebrtc.transport.SmallWebRTCTransport", lambda **kwargs: transport
+    )
     handler = LocalHandler()
     manager = SessionManager(
         store, handler_factory=lambda: cast(SmallWebRTCRequestHandler, handler)

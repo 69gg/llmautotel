@@ -211,7 +211,9 @@ async def running_hangup(
     )
     services = SDKServices(Passthrough(), service, cast(Any, GoodbyeTTS(mode)))
     monkeypatch.setattr(voice_module, "create_services", lambda settings: services)
-    monkeypatch.setattr(voice_module, "SmallWebRTCTransport", lambda **kwargs: transport)
+    monkeypatch.setattr(
+        "pipecat.transports.smallwebrtc.transport.SmallWebRTCTransport", lambda **kwargs: transport
+    )
     settings = AppSettings()
     settings.conversation.mode = conversation_mode
     settings.sales.goal = "订阅测试产品"

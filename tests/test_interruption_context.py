@@ -114,7 +114,9 @@ async def test_interrupted_function_request_uses_latest_price_question_in_real_s
     )
     services = SDKServices(Passthrough(), llm, ControlledTTS())
     monkeypatch.setattr(voice_module, "create_services", lambda settings: services)
-    monkeypatch.setattr(voice_module, "SmallWebRTCTransport", lambda **kwargs: transport)
+    monkeypatch.setattr(
+        "pipecat.transports.smallwebrtc.transport.SmallWebRTCTransport", lambda **kwargs: transport
+    )
     settings = AppSettings()
     settings.conversation.mode = "sales"
     settings.sales.goal = "让用户订阅测试计划"

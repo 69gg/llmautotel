@@ -194,7 +194,9 @@ async def speech_harness(
         await store.save_call(record)
 
     monkeypatch.setattr(voice_module, "create_services", lambda settings: services)
-    monkeypatch.setattr(voice_module, "SmallWebRTCTransport", lambda **kwargs: transport)
+    monkeypatch.setattr(
+        "pipecat.transports.smallwebrtc.transport.SmallWebRTCTransport", lambda **kwargs: transport
+    )
     session = VoiceSession(
         cast(SmallWebRTCConnection, object()),
         settings,

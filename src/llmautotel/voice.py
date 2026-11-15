@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.audio.vad.vad_analyzer import VADParams
@@ -32,8 +32,6 @@ from pipecat.processors.aggregators.llm_response_universal import (
 from pipecat.processors.aggregators.llm_text_processor import LLMTextProcessor
 from pipecat.processors.frameworks.rtvi import RTVIObserverParams, RTVIProcessor
 from pipecat.transports.base_transport import BaseTransport, TransportParams
-from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
-from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 from pipecat.turns.types import ProcessFrameResult
 from pipecat.turns.user_start import BaseUserTurnStartStrategy
 from pipecat.turns.user_stop import BaseUserTurnStopStrategy, SpeechTimeoutUserTurnStopStrategy
@@ -51,6 +49,11 @@ from llmautotel.latency import turn_latency
 from llmautotel.models import AppSettings, TurnLatency
 from llmautotel.providers import ProviderServices, create_services
 from llmautotel.speech import FirstClauseTextAggregator, SpeechTextGuard
+
+if TYPE_CHECKING:
+    from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
+
+    from llmautotel.remote_voice import RemoteVoiceSession
 
 TranscriptRole = Literal["user", "assistant"]
 
@@ -217,9 +220,12 @@ class VoiceSession:
         callbacks: VoiceCallbacks,
         *,
         transport: BaseTransport | None = None,
+        services_factory: Callable[[AppSettings], ProviderServices] | None = None,
     ) -> None:
         self._connection = connection
         self._transport = transport
+        self._services_factory = services_factory or create_services
+        self._remote_runtime: RemoteVoiceSession | None = None
         self._settings = settings.model_copy(deep=True)
         self._callbacks = callbacks
         self._worker: PipelineWorker | None = None
@@ -302,13 +308,22 @@ class VoiceSession:
         """运行到挂断、断开或模型失败，始终释放模型客户端。"""
         if self._reason is not None:
             return self._reason
+        if self._settings.voice.pipeline == "gpu":
+            from llmautotel.remote_voice import RemoteVoiceSession
+
+            self._remote_runtime = RemoteVoiceSession(
+                self._connection, self._settings, self._callbacks, transport=self._transport
+            )
+            return await self._remote_runtime.run()
         try:
-            self._services = create_services(self._settings)
+            self._services = self._services_factory(self._settings)
             if self._transport is not None:
                 transport = self._transport
             else:
                 if self._connection is None:
                     raise ValueError("语音会话缺少传输连接")
+                from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
+
                 transport = SmallWebRTCTransport(
                     webrtc_connection=self._connection,
                     params=TransportParams(audio_in_enabled=True, audio_out_enabled=True),
@@ -518,6 +533,9 @@ class VoiceSession:
         """取消而非等待排队语音播完，结束原因保持第一次请求的值。"""
         if self._reason is None:
             self._reason = reason
+        if self._remote_runtime is not None:
+            await self._remote_runtime.stop(reason)
+            return
         if self._user_aggregator is not None:
             # cancel() 前清掉尚未提交的用户文本，避免挂断反而触发新模型请求。
             await self._user_aggregator.reset()

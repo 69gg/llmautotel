@@ -99,7 +99,9 @@ async def running_retention(
     )
     services = SDKServices(Passthrough(), llm, cast(Any, RetentionTTS(mode)))
     monkeypatch.setattr(voice_module, "create_services", lambda settings: services)
-    monkeypatch.setattr(voice_module, "SmallWebRTCTransport", lambda **kwargs: transport)
+    monkeypatch.setattr(
+        "pipecat.transports.smallwebrtc.transport.SmallWebRTCTransport", lambda **kwargs: transport
+    )
     settings = AppSettings()
     settings.conversation.mode = "sales"
     settings.sales.goal = "订阅测试产品"

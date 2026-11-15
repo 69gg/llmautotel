@@ -186,7 +186,7 @@ async def test_legacy_record_loads_empty_metrics_and_new_metrics_survive_restart
         {"response_chunking": "invalid"},
         {"first_clause_min_chars": 3},
         {"response_target_ms": 0},
-        {"vad_stop_seconds": 0.1},
+        {"vad_stop_seconds": 0.09},
     ],
 )
 def test_invalid_latency_configuration_is_rejected(voice: dict[str, Any]) -> None:

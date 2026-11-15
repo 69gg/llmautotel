@@ -183,6 +183,7 @@
     ]
   },
   "serve_models": true,
+  "serve_realtime": true,
   "service_max_input_tokens": 16384,
   "service_max_output_tokens": 768,
   "service_max_request_bytes": 8388608,
