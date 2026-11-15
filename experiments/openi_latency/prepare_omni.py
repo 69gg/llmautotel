@@ -99,6 +99,7 @@ def download_asset(
             url,
             headers={"Range": f"bytes={offset}-{last_byte}", "Accept-Encoding": "identity"},
         )
+        request_deadline = time.monotonic() + min(request_timeout, remaining)
         try:
             with urllib.request.urlopen(
                 request, timeout=min(request_timeout, remaining)
@@ -124,6 +125,8 @@ def download_asset(
                     while received < response_bytes:
                         if time.monotonic() >= deadline:
                             raise TimeoutError("asset_prepare_deadline")
+                        if time.monotonic() >= request_deadline:
+                            raise TimeoutError("asset_request_budget")
                         chunk = response.read1(min(1024 * 1024, response_bytes - received))
                         if not chunk:
                             raise ConnectionError("asset_response_incomplete")

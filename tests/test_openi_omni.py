@@ -13,10 +13,69 @@ from typing import Any
 
 import pytest
 
+from experiments.openi_latency import prepare_omni
 from experiments.openi_latency.omni_worker import AudioPrefill
 from experiments.openi_latency.prepare_omni import download_asset, link_model_shards
 
 SOURCES = [{"url_template": "https://unused.invalid/{path}", "revision": "locked"}]
+
+
+def test_asset_dripping_connection_switches_mirror_and_keeps_partial(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data = b"0123456789abcdefghij"
+    clock = [0.0]
+    requests: list[tuple[str, str]] = []
+
+    class Response:
+        status = 206
+
+        def __init__(self, start: int, end: int, slow: bool) -> None:
+            self.body = data[start : end + 1]
+            self.slow = slow
+            self.headers = {"Content-Range": f"bytes {start}-{end}/{len(data)}"}
+
+        def __enter__(self) -> Response:
+            return self
+
+        def __exit__(self, *_: Any) -> None:
+            pass
+
+        def read1(self, size: int) -> bytes:
+            if self.slow:
+                clock[0] += 2
+                size = min(size, 7)
+            chunk, self.body = self.body[:size], self.body[size:]
+            return chunk
+
+        def read(self, _size: int) -> bytes:
+            return b""
+
+    def urlopen(request: Any, timeout: float) -> Response:
+        requests.append((request.full_url, request.headers["Range"]))
+        match = re.fullmatch(r"bytes=(\d+)-(\d+)", request.headers["Range"])
+        assert match and timeout > 0
+        start, end = map(int, match.groups())
+        return Response(start, end, len(requests) == 1)
+
+    monkeypatch.setattr(prepare_omni.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(prepare_omni.urllib.request, "urlopen", urlopen)
+    download_asset(
+        tmp_path,
+        {"path": "asset.bin", "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()},
+        [
+            {"url_template": "https://primary.invalid/{path}", "revision": "locked"},
+            {"url_template": "https://fallback.invalid/{path}", "revision": "locked"},
+        ],
+        10,
+        request_timeout=1,
+        retry_delay=0,
+    )
+    assert (tmp_path / "asset.bin").read_bytes() == data
+    assert requests == [
+        ("https://primary.invalid/asset.bin", "bytes=0-19"),
+        ("https://fallback.invalid/asset.bin", "bytes=7-19"),
+    ]
 
 
 @pytest.mark.parametrize("previous", ["absent", "broken", "old_mount", "current_mount"])
