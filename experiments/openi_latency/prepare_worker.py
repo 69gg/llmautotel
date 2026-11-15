@@ -90,6 +90,11 @@ def prepare_source(root: Path, config: dict[str, Any]) -> None:
 def main() -> None:
     root = Path(__file__).resolve().parent
     config = json.loads((root / "settings.run.json").read_text())
+    if config.get("model_backend") == "minicpm_o45":
+        from prepare_omni import prepare
+
+        prepare(root, config)
+        return
     environment = Path(config.get("worker_environment", str(root / ".worker-env")))
     prepare_source(root, config)
     selected = image_python(config)

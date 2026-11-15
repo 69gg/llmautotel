@@ -421,7 +421,12 @@ class Models:
 
 def main() -> None:
     config = json.loads((ROOT / "settings.run.json").read_text())
-    models = Models(config)
+    if config.get("model_backend") == "minicpm_o45":
+        from omni_worker import MiniCPMModels
+
+        models = MiniCPMModels(config)
+    else:
+        models = Models(config)
     commands: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=512)
 
     def receive() -> None:
