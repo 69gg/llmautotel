@@ -1,0 +1,7 @@
+funasr==1.4.19
+modelscope==1.36.1
+transformers==4.51.3
+torch==2.6.0
+torchaudio==2.6.0
+numpy==1.26.4
+setuptools==80.9.0

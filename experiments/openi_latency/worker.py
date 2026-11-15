@@ -274,11 +274,13 @@ class Models:
         thread.start()
         clock = PlaybackClock()
         first_packet_at: float | None = None
+        audio_bytes = 0
         try:
             for pcm in self.synthesize(text_stream()):
                 now = time.perf_counter()
                 first_packet_at = first_packet_at or now
                 clock.feed(pcm, self.sample_rate, now)
+                audio_bytes += len(pcm)
                 callback(
                     {
                         "type": "audio",
@@ -309,6 +311,10 @@ class Models:
             else None,
             "effective_audio_ms": round((clock.first_signal_at - start) * 1000, 1),
             "tts_trace": self.synthesis.trace,
+            "generation_total_ms": round((time.perf_counter() - start) * 1000, 1),
+            "audio_ms": round(audio_bytes / (self.sample_rate * 2) * 1000, 1),
+            "playback_starvation_ms": round(clock.starvation_seconds * 1000, 1),
+            "playback_starvation_events": clock.starvation_events,
         }
         callback({"type": "done", **result})
         return result
@@ -421,7 +427,11 @@ class Models:
 
 def main() -> None:
     config = json.loads((ROOT / "settings.run.json").read_text())
-    if config.get("model_backend") == "minicpm_o45":
+    if config.get("model_backend") == "hybrid_qwen3":
+        from hybrid_worker import HybridModels
+
+        models = HybridModels(config)
+    elif config.get("model_backend") == "minicpm_o45":
         if config.get("optimization_suite", False):
             from omni_optimizations import OptimizedMiniCPMModels
 

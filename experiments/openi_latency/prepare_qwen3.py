@@ -72,7 +72,8 @@ def prepare(root: Path, config: dict[str, Any]) -> None:
         OMP_NUM_THREADS="4",
         TOKENIZERS_PARALLELISM="false",
     )
-    os.execv(str(python), [str(python), "-u", str(root / "qwen3_worker.py")])
+    entry = "worker.py" if config.get("model_backend") == "hybrid_qwen3" else "qwen3_worker.py"
+    os.execv(str(python), [str(python), "-u", str(root / entry)])
 
 
 if __name__ == "__main__":

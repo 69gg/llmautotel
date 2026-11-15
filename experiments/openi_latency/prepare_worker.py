@@ -90,6 +90,11 @@ def prepare_source(root: Path, config: dict[str, Any]) -> None:
 def main() -> None:
     root = Path(__file__).resolve().parent
     config = json.loads((root / "settings.run.json").read_text())
+    if config.get("model_backend") == "hybrid_qwen3":
+        from prepare_hybrid import prepare
+
+        prepare(root, config)
+        return
     if config.get("model_backend") == "qwen3_tts":
         from prepare_qwen3 import prepare
 
