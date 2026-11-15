@@ -467,6 +467,8 @@ werkzeug==3.1.9
     # via tensorboard
 wetext==0.0.4
     # via -r experiments/openi_latency/requirements-worker.in
+wget==3.2
+    # via -r experiments/openi_latency/requirements-worker.in
 wheel==0.48.0
     # via tensorboard
 x-transformers==2.11.24
