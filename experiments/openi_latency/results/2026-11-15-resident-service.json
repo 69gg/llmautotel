@@ -1,0 +1,193 @@
+{
+  "task_id": 935216,
+  "task_name": "voice-service-20261115",
+  "task_status_at_verification": "RUNNING",
+  "gpu": "A100 40GB",
+  "points_per_hour": 9,
+  "keep_running": true,
+  "verification": {
+    "checked_at": "2026-11-15T13:32:58.795795+00:00",
+    "host": "103.52.153.233",
+    "gpu_url": "https://f71e59f41a854aca.mlunotebook.openi.org.cn",
+    "health": {
+      "status": "ready",
+      "service": "llmautotel-gpu-models",
+      "models": {
+        "asr": "FunAudioLLM/SenseVoiceSmall",
+        "llm": "Qwen/Qwen3-1.7B",
+        "tts": "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
+      }
+    },
+    "unauthorized_status": 401,
+    "model_ids": [
+      "FunAudioLLM/SenseVoiceSmall",
+      "Qwen/Qwen3-1.7B",
+      "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
+    ],
+    "tts": {
+      "effective_first_audio_ms": 442.8,
+      "total_ms": 1285.9,
+      "pcm_bytes": 111360,
+      "http_chunks": 32,
+      "audio_ms": 2320.0
+    },
+    "asr": {
+      "elapsed_ms": 450.4,
+      "text": "请问这个产品有什么功能？"
+    },
+    "llm": {
+      "first_text_ms": 129.0,
+      "elapsed_ms": 622.4,
+      "text": "它可以整理文档、总结资料，帮助用户更高效地处理和归纳信息。",
+      "tool_calls": [],
+      "done": true
+    },
+    "tool": {
+      "first_text_ms": null,
+      "elapsed_ms": 952.2,
+      "text": "",
+      "tool_calls": [
+        {
+          "index": 0,
+          "id": "call_d5a551902ede4253bdde2a0736dc51ab",
+          "type": "function",
+          "function": {
+            "name": "hang_up",
+            "arguments": "{\"reason\": \"用户明确要求结束通话\"}"
+          }
+        }
+      ],
+      "done": true
+    },
+    "cancel": {
+      "first_text_ms": 240.1,
+      "elapsed_ms": 240.4,
+      "text": "语言",
+      "tool_calls": [],
+      "done": false
+    },
+    "after_cancel": {
+      "first_text_ms": 341.9,
+      "elapsed_ms": 400.9,
+      "text": "新一轮。",
+      "tool_calls": [],
+      "done": true
+    },
+    "passed": true
+  },
+  "configuration": {
+    "checked_at": "2026-11-15T13:33:52.484076+00:00",
+    "host": "103.52.153.233",
+    "gpu_url": "https://f71e59f41a854aca.mlunotebook.openi.org.cn",
+    "health": {
+      "status": "ready",
+      "service": "llmautotel-gpu-models",
+      "models": {
+        "asr": "FunAudioLLM/SenseVoiceSmall",
+        "llm": "Qwen/Qwen3-1.7B",
+        "tts": "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
+      }
+    },
+    "unauthorized_status": 401,
+    "model_ids": [
+      "FunAudioLLM/SenseVoiceSmall",
+      "Qwen/Qwen3-1.7B",
+      "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
+    ],
+    "backup": "/var/backups/llmautotel/20261115T133318Z-gpu-switch/settings.json",
+    "configured": {
+      "asr": {
+        "base_url": "https://f71e59f41a854aca.mlunotebook.openi.org.cn/v1",
+        "model": "FunAudioLLM/SenseVoiceSmall",
+        "api_key_set": true
+      },
+      "llm": {
+        "base_url": "https://f71e59f41a854aca.mlunotebook.openi.org.cn/v1",
+        "model": "Qwen/Qwen3-1.7B",
+        "api_key_set": true
+      },
+      "tts": {
+        "base_url": "https://f71e59f41a854aca.mlunotebook.openi.org.cn/v1",
+        "model": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+        "api_key_set": true
+      }
+    },
+    "preserved_existing_business_and_telephony_fields": true,
+    "normalization": "API填充了原配置缺省字段，原有业务字段逐项核对一致",
+    "app_health": {
+      "status": "ok"
+    },
+    "active_call_present": false,
+    "passed": true
+  },
+  "business_pipeline_benchmark": [
+    {
+      "sample": {
+        "sequence": 1,
+        "effective_audio_ms": 3879.2,
+        "target_ms": 1000,
+        "within_target": false,
+        "user_text": "他可以做什么？",
+        "assistant_text": "ChatGPT Plus 可以帮助解释知识、整理学习资料、起草和润色文章、总结文件及分析数据。 Plus 相比免费方案提供更高的消息及工具使用额度、更广的模型选择和高级推理能力。",
+        "server_latency": {
+          "sequence": 1,
+          "kind": "reply",
+          "timestamp": "2026-11-15T13:34:44.703645+00:00",
+          "total_ms": 3667.7,
+          "target_ms": 1000,
+          "parts": [
+            {
+              "stage": "endpointing_wait",
+              "duration_ms": 600.0
+            },
+            {
+              "stage": "transcription",
+              "duration_ms": 1060.8
+            },
+            {
+              "stage": "turn_detection",
+              "duration_ms": 64.4
+            },
+            {
+              "stage": "llm_inference",
+              "duration_ms": 507.5
+            },
+            {
+              "stage": "speech_synthesis",
+              "duration_ms": 1434.2
+            },
+            {
+              "stage": "pipeline",
+              "duration_ms": 0.8
+            }
+          ]
+        }
+      }
+    },
+    {
+      "summary": {
+        "scope": "in_memory_terminal_not_browser_or_phone",
+        "semantic_check": "review_assistant_text_manually",
+        "models": {
+          "asr": "FunAudioLLM/SenseVoiceSmall",
+          "llm": "Qwen/Qwen3-1.7B",
+          "tts": "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
+        },
+        "chunking": "first_clause",
+        "vad_stop_seconds": 0.6,
+        "rms_threshold": 300,
+        "samples": 1,
+        "min_ms": 3879.2,
+        "median_ms": 3879.2,
+        "max_ms": 3879.2,
+        "within_target": 0
+      }
+    }
+  ],
+  "limitations": [
+    "One synthetic in-memory business pipeline sample; no browser, microphone or telephone acceptance.",
+    "Production sample effective first audio 3879.2ms; 1000ms target not met.",
+    "No audio saved. API smoke timings are independent measurements and cannot be added or substituted for full-chain timing.",
+    "OpenI proxy and GPU lifetime depend on platform quotas and policy."
+  ]
+}
