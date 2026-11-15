@@ -222,3 +222,5 @@ OpenI 启动时 ONNX Runtime 提示 CUDA 执行提供者缺少 `libcudnn_adv.so.
 预生成以已知输入音频结束作为触发点，确认后才开放播放，属于理想端点的收益上界，不能冒充真实 VAD 预测。另测取消候选、恢复官方 speculative snapshot、追加新音频并回复，检查 KV 长度和丢弃候选音频。缓存只有模型完整答案精确匹配批准文本才命中；未知答案或价格、音色、提示词快照变化不得复用。缓存准备、编译和预热时间单列，异常如实记录，不把失败或占位话记成达标。
 
 运行 `client.py --mode optimize --repeats 1`；选定方案后可用 `--variant NAME --mode remote` 从媒体服务器复测。所有 GPU 编译、权重和推理仅在 OpenI，本地只运行 `tests/test_openi_optimization.py` 等轻量验证。每批结束通过平台停止任务并核实 STOPPED；没有设备播放或真实 VAD 验收前，结果仅为内存播放口径。
+
+首次矩阵初始化中，Torch `inference_mode` 装饰器使 `getsource()` 返回原方法、`__globals__` 却仍属于装饰器模块，动态方法绑定报 `NameError: torch`。现同时通过 `inspect.unwrap()` 获取源码和命名空间，并补充外部装饰器命名空间回归测试；失败任务不计入延迟样本。

@@ -93,7 +93,9 @@ def bind_streaming_chunk_options(model: Any) -> dict[str, Any]:
     上游外层 CHUNK_SIZE 写死，单传 audio_token_chunk_size 并不会缩小 PCM 块。
     AST 只允许修改两个已知赋值；源码变化时失败，不改共享文件或挂载权重。
     """
-    original = type(model).streaming_generate
+    # Torch inference_mode wraps the method in torch.utils._contextlib.
+    # getsource follows __wrapped__, but __globals__ does not: unwrap both.
+    original = inspect.unwrap(type(model).streaming_generate)
     source = textwrap.dedent(inspect.getsource(original))
     tree = ast.parse(source)
     changes: dict[str, int] = {"CHUNK_SIZE": 0, "generate_chunk_size": 0}

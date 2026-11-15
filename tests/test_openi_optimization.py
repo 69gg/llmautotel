@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import struct
 from collections.abc import Iterator
 
@@ -76,3 +77,21 @@ class ChangedUpstream:
 def test_upstream_change_fails_instead_of_silently_mismeasuring() -> None:
     with pytest.raises(ValueError, match="upstream_chunk_assignment_changed"):
         bind_streaming_chunk_options(ChangedUpstream())
+
+
+def test_patch_uses_source_globals_through_foreign_decorator_namespace() -> None:
+    namespace: dict[str, object] = {"wraps": functools.wraps}
+    exec(
+        "def decorate(f):\n @wraps(f)\n def wrapped(*a, **kw):\n"
+        "  return f(*a, **kw)\n return wrapped",
+        namespace,
+    )
+    decorate = namespace["decorate"]
+
+    class Wrapped(Upstream):
+        streaming_generate = decorate(Upstream.streaming_generate)
+
+    model = Wrapped()
+    bind_streaming_chunk_options(model)
+    model._latency_audio_tokens = 12
+    assert list(model.streaming_generate()) == [(10, 12)]
