@@ -2,19 +2,74 @@
 
 from __future__ import annotations
 
+import glob
 import json
 import os
+import shutil
 import subprocess
-import venv
 from pathlib import Path
+from typing import Any
+
+
+def image_python(config: dict[str, Any]) -> str:
+    """验证镜像自带的 GPU 环境，避免误用平台启动器的 Python。"""
+    probe = (
+        "import json, sys, torch, torchaudio, triton; "
+        "assert torch.cuda.is_available(); "
+        "torch.ones(1, device='cuda').sum().item(); "
+        "print(json.dumps({'python':sys.executable,'version':sys.version.split()[0],"
+        "'torch':torch.__version__,'torchaudio':torchaudio.__version__,"
+        "'triton':triton.__version__,'cuda':torch.version.cuda}))"
+    )
+    candidates: list[str] = []
+    for pattern in config["python_candidates"]:
+        path = shutil.which(pattern)
+        candidates.extend([path] if path else sorted(glob.glob(pattern)))
+    for candidate in dict.fromkeys(candidates):
+        try:
+            result = subprocess.run(
+                [candidate, "-c", probe], capture_output=True, text=True, timeout=30
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            print(f"runtime_probe {candidate}: {type(exc).__name__}", flush=True)
+            continue
+        if result.returncode == 0:
+            info = json.loads(result.stdout.strip().splitlines()[-1])
+            print("image_runtime " + json.dumps(info), flush=True)
+            if all(
+                info[name].split("+")[0] == config["torch_version"]
+                for name in ("torch", "torchaudio")
+            ):
+                return candidate
+        else:
+            print(f"runtime_probe {candidate}: {result.stderr[-500:]}", flush=True)
+    raise RuntimeError("no_verified_image_torch_environment")
+
+
+def image_requirements(lock: str) -> str:
+    """Torch/CUDA 来自已验证镜像，其余依赖仍按完整锁定版本安装。"""
+    requirements: list[str] = []
+    for line in lock.splitlines():
+        name = line.split("==", 1)[0].strip().lower()
+        if name in {"torch", "torchaudio", "triton"} or name.startswith("nvidia-"):
+            continue
+        requirements.append(line)
+    return "\n".join(requirements) + "\n"
 
 
 def main() -> None:
     root = Path(__file__).resolve().parent
     config = json.loads((root / "settings.run.json").read_text())
     environment = root / ".worker-env"
-    venv.EnvBuilder(with_pip=True, system_site_packages=True).create(environment)
+    selected = image_python(config)
+    subprocess.run(
+        [selected, "-m", "venv", "--system-site-packages", str(environment)],
+        check=True,
+        timeout=60,
+    )
     python = environment / "bin/python"
+    requirements = root / "requirements-image.run.lock"
+    requirements.write_text(image_requirements((root / "requirements-worker.lock").read_text()))
     subprocess.run(
         [str(python), "-m", "pip", "install", "--index-url", config["pip_index_url"], "uv==0.13.8"],
         check=True,
@@ -31,8 +86,9 @@ def main() -> None:
             config["pip_index_url"],
             "--build-constraints",
             str(root / "requirements-build.lock"),
+            "--no-deps",
             "-r",
-            str(root / "requirements-worker.lock"),
+            str(requirements),
         ],
         check=True,
         timeout=1500,

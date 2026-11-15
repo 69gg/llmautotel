@@ -13,6 +13,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from experiments.openi_latency.client import wait_ready
 from experiments.openi_latency.gateway import create_app
+from experiments.openi_latency.prepare_worker import image_requirements
 from experiments.openi_latency.protocol import (
     PlaybackClock,
     signal_offset_ms,
@@ -86,3 +87,11 @@ async def test_initialization_poll_uses_authenticated_http_and_surfaces_failure(
         else:
             with pytest.raises(RuntimeError, match=phase):
                 await wait_ready(client)
+
+
+def test_verified_image_stack_is_not_downloaded_again() -> None:
+    lock = (
+        "torch==2.6.0\ntorchaudio==2.6.0\nnvidia-cudnn-cu12==9.1.0\n"
+        "triton==3.2.0\nfunasr==1.4.19\n"
+    )
+    assert image_requirements(lock) == "funasr==1.4.19\n"

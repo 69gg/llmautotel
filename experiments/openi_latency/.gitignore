@@ -2,5 +2,6 @@
 .worker-env/
 CosyVoice/
 settings.run.json
+requirements-image.run.lock
 *.log
 __pycache__/

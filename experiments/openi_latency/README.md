@@ -10,6 +10,8 @@
 
 启动只安装轻量网关依赖。先验证官方代理允许双向 WebSocket，再发送认证 `load` 指令才安装隔离的模型环境、下载模型并加载。仅一个客户端可使用服务，模型回合最多 20 次，输入最多 20 秒；两小时后不接受新连接。这不等于停止 GPU 计费，完成或失败后必须在平台停止任务并确认状态。
 
+模型准备阶段先从 `python_candidates` 寻找并验证镜像自带的 Torch/CUDA 环境。平台启动器的 Python 可能与镜像标签不同，不能直接据标签认定运行版本。验证 Torch、Torchaudio 版本及实际 CUDA 运算成功后，继承镜像的 GPU 库，其余 Python 依赖按锁文件安装；找不到符合配置的环境立即失败，避免重新下载整套 Torch/CUDA。最终以实测报告中的版本为准。
+
 ```sh
 uv run python experiments/openi_latency/client.py --url "$OPENI_URL" \
   --token-file data/openi-token --mode probe
