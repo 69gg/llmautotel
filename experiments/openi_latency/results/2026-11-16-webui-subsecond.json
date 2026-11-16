@@ -1,0 +1,87 @@
+{
+  "source": "production_saved_call_latencies_matching_user_screenshot",
+  "call_started_at": "2026-11-16T21:24:14.877241+08:00",
+  "scope": "GPU_pipeline_server_first_audio_not_browser_audibility",
+  "models": {
+    "asr": "FunAudioLLM/SenseVoiceSmall",
+    "llm": "Qwen/Qwen3-1.7B",
+    "tts": "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
+  },
+  "settings": {
+    "pipeline": "gpu",
+    "vad_stop_seconds": 0.1,
+    "response_chunking": "first_clause",
+    "first_clause_min_chars": 8,
+    "playback_speed": 1.0
+  },
+  "rounds": [
+    {
+      "sequence": 1,
+      "timestamp": "2026-11-16T21:24:29.831333+08:00",
+      "total_ms": 1232.5,
+      "parts": [
+        {
+          "stage": "endpointing_wait",
+          "duration_ms": 100.0
+        },
+        {
+          "stage": "transcription",
+          "duration_ms": 97.1
+        },
+        {
+          "stage": "turn_detection",
+          "duration_ms": 9.0
+        },
+        {
+          "stage": "llm_inference",
+          "duration_ms": 215.5
+        },
+        {
+          "stage": "speech_synthesis",
+          "duration_ms": 809.4
+        },
+        {
+          "stage": "pipeline",
+          "duration_ms": 1.6
+        }
+      ]
+    },
+    {
+      "sequence": 2,
+      "timestamp": "2026-11-16T21:24:37.639296+08:00",
+      "total_ms": 779.4,
+      "parts": [
+        {
+          "stage": "endpointing_wait",
+          "duration_ms": 100.0
+        },
+        {
+          "stage": "transcription",
+          "duration_ms": 104.9
+        },
+        {
+          "stage": "turn_detection",
+          "duration_ms": 9.1
+        },
+        {
+          "stage": "llm_inference",
+          "duration_ms": 118.4
+        },
+        {
+          "stage": "speech_synthesis",
+          "duration_ms": 445.9
+        },
+        {
+          "stage": "pipeline",
+          "duration_ms": 1.0
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "no browser audio timing recorded",
+    "single observed subsecond round, not a percentile or SLA",
+    "cache warmup or scheduling effects not individually measured",
+    "rounded stage values may differ slightly from total"
+  ]
+}

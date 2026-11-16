@@ -98,3 +98,15 @@ input, textarea, select { width: 100%; outline: none; border: 1px solid #dce1d5;
 .latency-entry dt { color: #6b7866; }
 .latency-entry dd { margin: 0; font-variant-numeric: tabular-nums; }
 .latency-entry p { color: #6b7866; font-size: 11px; line-height: 1.7; margin: 8px 0 0; }
+
+.latency-heading { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.latency-heading > span, .latency-round-label, .latency-toggle { color: var(--text-muted); font-size: 11px; }
+.latency-toggle { margin-left: auto; text-decoration: underline; text-underline-offset: 3px; }
+.latency-rounds { max-height: 340px; overflow-y: auto; scrollbar-width: thin; }
+.latency-entry { padding: 4px 0; }
+.latency-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 10px; }
+.latency-table caption { text-align: left; color: var(--text-muted); margin-bottom: 6px; }
+.latency-table th, .latency-table td { padding: 5px 4px; text-align: right; font-variant-numeric: tabular-nums; }
+.latency-table th:first-child { text-align: left; font-weight: 400; overflow-wrap: anywhere; }
+.latency-table thead, .latency-table tfoot { border-bottom: 1px solid var(--line); }
+.latency-table tfoot { border-top: 1px solid var(--line); border-bottom: 0; }
