@@ -112,6 +112,7 @@ class TTSSettings(ProviderSettings):
 
 class VoiceSettings(StrictModel):
     pipeline: Literal["local", "gpu"] = "local"
+    playback_speed: float = Field(default=1.0, ge=0.8, le=1.5)
     vad_start_seconds: float = Field(default=0.1, ge=0.05, le=1)
     vad_stop_seconds: float = Field(default=0.3, ge=0.1, le=3)
     vad_confidence: float = Field(default=0.7, gt=0, lt=1)

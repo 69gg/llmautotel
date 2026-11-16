@@ -29,6 +29,7 @@ from pipecat.workers.runner import WorkerRunner
 from websockets.asyncio.client import ClientConnection, connect
 
 from llmautotel.models import AppSettings, TurnLatency
+from llmautotel.playback import SpeechPlaybackSpeed
 from llmautotel.voice import VoiceCallbacks
 
 
@@ -59,6 +60,8 @@ def remote_snapshot(settings: AppSettings) -> dict[str, Any]:
         },
     )
     result["voice"]["pipeline"] = "local"
+    # 变速只在业务服务器播放出口执行；兼容尚未升级的 GPU 配置格式。
+    result["voice"].pop("playback_speed", None)
     return result
 
 
@@ -222,7 +225,13 @@ class RemoteVoiceSession:
                     params=TransportParams(audio_in_enabled=True, audio_out_enabled=True),
                 )
             pipeline = Pipeline(
-                [self.transport.input(), self.input, self.transport.output(), _RelayOutput(self)]
+                [
+                    self.transport.input(),
+                    self.input,
+                    SpeechPlaybackSpeed(self.settings.voice.playback_speed),
+                    self.transport.output(),
+                    _RelayOutput(self),
+                ]
             )
             self.worker = PipelineWorker(
                 pipeline,

@@ -42,7 +42,7 @@ export interface Settings {
   asr: ProviderSettings & { protocol: AudioProtocol; language: string };
   llm: ProviderSettings & { thinking: ThinkingMode | null; reasoning_effort: ReasoningEffort | null };
   tts: ProviderSettings & { protocol: AudioProtocol; voice: string; sample_rate: number; instructions: string; streaming_input: boolean };
-  voice: { pipeline?: 'local' | 'gpu'; vad_start_seconds: number; vad_stop_seconds: number; vad_confidence: number; response_chunking: 'first_clause' | 'sentence'; first_clause_min_chars: number; response_target_ms: number };
+  voice: { pipeline?: 'local' | 'gpu'; playback_speed?: number; vad_start_seconds: number; vad_stop_seconds: number; vad_confidence: number; response_chunking: 'first_clause' | 'sentence'; first_clause_min_chars: number; response_target_ms: number };
   telephony: TelephonySettings;
 }
 

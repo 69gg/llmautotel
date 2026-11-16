@@ -47,6 +47,7 @@ from llmautotel.hangup import (
 )
 from llmautotel.latency import turn_latency
 from llmautotel.models import AppSettings, TurnLatency
+from llmautotel.playback import SpeechPlaybackSpeed
 from llmautotel.providers import ProviderServices, create_services
 from llmautotel.speech import FirstClauseTextAggregator, SpeechTextGuard
 
@@ -393,6 +394,7 @@ class VoiceSession:
                     conversation.generated(),
                     *text_processors,
                     self._services.tts,
+                    SpeechPlaybackSpeed(self._settings.voice.playback_speed),
                     transport.output(),
                     conversation.output(),
                     hangup,

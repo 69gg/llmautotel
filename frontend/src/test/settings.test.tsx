@@ -58,6 +58,8 @@ describe('供应商协议与思考参数', () => {
     expect(screen.getByLabelText('销售风格')).toHaveValue('conversational');
     expect(screen.getByLabelText('处理链路')).toHaveValue('local');
     await user.selectOptions(screen.getByLabelText('处理链路'), 'gpu');
+    await user.clear(screen.getByLabelText('播放语速'));
+    await user.type(screen.getByLabelText('播放语速'), '1.15');
     expect(screen.getByLabelText('合成断句')).toHaveValue('first_clause');
     await user.selectOptions(screen.getByLabelText('销售风格'), 'direct');
     await user.selectOptions(screen.getByLabelText('合成断句'), 'sentence');
@@ -73,7 +75,7 @@ describe('供应商协议与思考参数', () => {
     const body = save.mock.calls[0][0];
     expect(body.sales.style).toBe('direct');
     expect(body.tts.instructions).toBe('用自然中文交谈，短句、适当停顿。');
-    expect(body.voice).toMatchObject({ pipeline: 'gpu', response_chunking: 'sentence', first_clause_min_chars: 12, vad_stop_seconds: 0.25, response_target_ms: 900 });
+    expect(body.voice).toMatchObject({ pipeline: 'gpu', playback_speed: 1.15, response_chunking: 'sentence', first_clause_min_chars: 12, vad_stop_seconds: 0.25, response_target_ms: 900 });
     expect(body.asr.model).toBe(fixtureSettings.asr.model);
     expect(body.llm.thinking).toBeNull();
     expect(body.telephony).toEqual(settingsUpdate(fixtureSettings, { asr: '', llm: '', tts: '' }).telephony);
