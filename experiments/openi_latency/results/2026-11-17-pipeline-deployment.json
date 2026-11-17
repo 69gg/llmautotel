@@ -1,0 +1,160 @@
+{
+  "recorded_on": "2026-11-17",
+  "scope": "deployment_smoke_with_real_models_and_server_in_memory_terminal_not_browser_or_phone",
+  "deployment": {
+    "branch": "codex/openi-latency-spike",
+    "business_commit": "6dd1920c7bca52000e98f53e833eff2c5051bfd6",
+    "business_server": "103.52.153.233",
+    "business_release": "/opt/llmautotel/releases/20261117-pipeline-6dd1920",
+    "business_independent_venv": true,
+    "business_backup": "/var/backups/llmautotel/20261117T134807Z-pipeline-6dd1920",
+    "gpu_commit": "1b440a8390514e54b6b7559e984503a45b6348e4",
+    "gpu_task": 937289,
+    "gpu_task_name": "voice-pipeline-fixed-20261117",
+    "gpu_started_at": "2026-11-17T22:19:35+08:00",
+    "gpu_base": "https://dd06e868b51941ab.mlunotebook.openi.org.cn",
+    "gpu_hardware": "A10040GB",
+    "gpu_health": "ready",
+    "gpu_time_limit": 0,
+    "gpu_kept_running": true,
+    "business_source_files_matched_gpu_bundle": 29,
+    "business_and_gpu_commits_gpg_verified": true,
+    "non_address_configuration_unchanged": true,
+    "gpu_runtime_settings_sha256_unchanged": true,
+    "models_unchanged": true,
+    "playback_speed": 1.0,
+    "vad_stop_seconds": 0.1,
+    "only_configuration_change": "three_model_base_urls",
+    "previous_gpu_task": 935318,
+    "previous_gpu_task_stopped": true
+  },
+  "models": {
+    "asr": "FunAudioLLM/SenseVoiceSmall",
+    "llm": "Qwen/Qwen3-1.7B",
+    "tts": "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
+  },
+  "changes": [
+    "bounded_async_model_queue_with_cancellation_and_backpressure",
+    "unpaced_gpu_relay_with_paced_final_business_output",
+    "skip_playback_drain_when_no_new_audio",
+    "freeze_generation_ownership_across_audio_send_awaits"
+  ],
+  "automated_validation_before_deployment": {
+    "focused_tests_passed": 39,
+    "backend_tests_passed": 544,
+    "backend_tests_skipped": 3,
+    "skipped_reason": "external_nginx_environment_required",
+    "ruff": "passed",
+    "frontend_build": "passed"
+  },
+  "public_https": {
+    "strict_tls": true,
+    "anonymous_status": 401,
+    "page_status": 200,
+    "assets": [
+      {"path": "/assets/index-s7zgCpi1.js", "status": 200, "bytes": 702861},
+      {"path": "/assets/index-B-a-t5bN.css", "status": 200, "bytes": 23245}
+    ],
+    "health": "ok",
+    "active_call": null,
+    "service_state": "active",
+    "service_restarts": 0
+  },
+  "gpu_authentication": {"without_token_status": 401, "existing_token_models_request": "passed"},
+  "opening_reconnect": [
+    {"connection": 1, "audio_packets": 380, "valid_signal": true, "playback_ack": true, "text_committed": true},
+    {"connection": 2, "audio_packets": 368, "valid_signal": true, "playback_ack": true, "text_committed": true}
+  ],
+  "normal_reply": {
+    "question": "它可以做什么？",
+    "samples": 1,
+    "sequence": 1,
+    "effective_audio_ms": 1049.2,
+    "target_ms": 1000,
+    "within_target": false,
+    "user_text": "他可以做什么？",
+    "assistant_text": "ChatGPT Plus 可以帮助解释知识、 整理学习资料、起草和润色文章、总结文件及分析数据。 它还提供语音对话和图片生成。 Plus 相比免费方案提供更高的消息及工具使用额度、更广的模型选择和高级推理能力。",
+    "server_latency": {
+      "sequence": 1,
+      "kind": "reply",
+      "timestamp": "2026-11-17T14:31:47.126856+00:00",
+      "total_ms": 927.1,
+      "target_ms": 1000,
+      "parts": [
+        {"stage": "endpointing_wait", "duration_ms": 100.0},
+        {"stage": "transcription", "duration_ms": 87.5},
+        {"stage": "turn_detection", "duration_ms": 9.4},
+        {"stage": "llm_inference", "duration_ms": 213.3},
+        {"stage": "speech_synthesis", "duration_ms": 515.8},
+        {"stage": "pipeline", "duration_ms": 1.0}
+      ]
+    },
+    "semantic_review": "reply_describes_configured_product_features",
+    "benchmark_exit_code": 1,
+    "benchmark_exit_reason": "completed_but_exceeded_1000ms_target"
+  },
+  "interruption_and_hangup_smoke": {
+    "status": "automatic_hangup_failed",
+    "all_three_flushes_observed": true,
+    "all_three_new_user_transcriptions_observed": true,
+    "all_three_new_reply_audio_observed": true,
+    "ending_or_ai_hangup_observed": false,
+    "samples": [
+      {
+        "sequence": 1,
+        "user_text": "请挂断电话。 结束通话。",
+        "assistant_text": "好的，您想结束通话，祝您生活愉快，再见。",
+        "gpu_first_audio_ms": 1107.1,
+        "audio_packets": 272,
+        "end_reason": "model_error"
+      },
+      {
+        "sequence": 2,
+        "user_texts": ["请挂断电话。", "结束通话。"],
+        "assistant_text": "好的，您想结束通话。祝您生活愉快，再见。",
+        "gpu_first_audio_ms": 856.7,
+        "audio_packets": 248,
+        "end_reason": "model_error"
+      },
+      {
+        "sequence": 3,
+        "user_text": "请挂断电话。",
+        "assistant_text": "好的，您想挂断电话，那我先为您播放祝福的话，再挂断。祝您生活愉快，再见。",
+        "gpu_first_audio_ms": 982.4,
+        "audio_packets": 393,
+        "websocket_close_code": 1000,
+        "websocket_close_reason": "",
+        "end_reason": "model_error"
+      }
+    ],
+    "tool_probe": {
+      "tools_forwarded_to_backend": true,
+      "hang_up_in_tool_list": true,
+      "production_prompt_real_llm_request": true,
+      "assistant_text": "好的，祝您生活愉快，再见。",
+      "tool_calls": null,
+      "finish_reason": "stop",
+      "conclusion": "observed_model_generated_farewell_without_calling_hang_up"
+    },
+    "websocket_close_cause": "unresolved",
+    "workaround": "manual_hangup",
+    "hangup_rules_changed": false
+  },
+  "deployment_issues": [
+    {"task": 937254, "commit": "fce77e5", "issue": "missing_playback_module_in_gpu_bundle", "resolution": "added_module_and_pushed_signed_commit_1b440a8"},
+    {"task": 937277, "issue": "rerun_reused_old_commit", "resolution": "stopped_and_created_task_from_fixed_commit"},
+    {"task": 937279, "commit": "1b440a8", "issue": "stopped_too_early_during_model_loading", "log_evidence": "realtime_business_import_succeeded_then_loading_isolated_asr", "resolution": "started_937289_with_same_fixed_commit_and_waited_until_ready"}
+  ],
+  "limitations": [
+    "one_normal_reply_sample_not_a_latency_distribution_or_sla",
+    "no_same_environment_before_after_ab_test",
+    "gpu_metric_excludes_downstream_terminal_transport_and_playback",
+    "server_in_memory_terminal_is_not_browser_or_physical_device",
+    "automatic_hangup_not_passed",
+    "long_connection_close_cause_not_resolved",
+    "no_browser_microphone_headphone_speaker_or_phone_acceptance_this_deployment",
+    "latency_difference_not_attributable_entirely_to_network"
+  ],
+  "local_model_download_or_inference": false,
+  "audio_saved": false
+}

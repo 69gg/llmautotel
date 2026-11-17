@@ -179,3 +179,15 @@ GPU 按生成代次标注音频；插话后发出 flush，服务器清播放队�
 ### 2026-11-16 恢复原速与阶段统计
 
 用户反馈1.15倍播放出现断续，线上已将 `voice.playback_speed` 恢复为1.0；该值直接旁路变速滤镜，下一通生效。原可配能力保留，GPU服务不重启。恢复前数据库备份在 `/var/backups/llmautotel/20261116-reset-speed`。WebUI增加默认展开的最新阶段明细、各轮比较及毫秒/占比；统计口径及0.78秒原始记录见 `openi-model-service.md`。
+
+## 2026-11-17 管线优化上线
+
+业务代码 `6dd1920` 已 GPG 签名验签并推送到 `codex/openi-latency-spike`，未合并 main。新发布目录为 `/opt/llmautotel/releases/20261117-pipeline-6dd1920`，使用独立 `.venv`；`current` 已切换并重启服务。旧链接指向 `/opt/llmautotel/releases/20261116-latency-ui-326fbab`，原共享环境 `/opt/llmautotel/releases/20261114T135053Z-888e4ad/.venv` 保留。SQLite 与原发布信息备份在 `/var/backups/llmautotel/20261117T134807Z-pipeline-6dd1920`，目录 0700、数据库及 manifest 文件 0600；部署元数据保存于 `/var/lib/llmautotel-deploy-pipeline.json`。
+
+业务服务 active、NRestarts=0，健康接口 ok，无活动通话，主要源码散列与本机一致。公网 `https://103.52.153.233` 经系统 CA 校验通过；匿名访问 401，鉴权页面和 JS/CSS 均 200。未修改 Nginx、TURN、证书、入口凭据或电话开关。
+
+GPU 私库 `1b440a8` 已签名推送，包含与业务版本一致的全部 29 个业务源码文件。当前常驻任务为 937289，健康 ready；服务根地址为 `https://dd06e868b51941ab.mlunotebook.openi.org.cn`。在无通话时仅切换三组模型的 `base_url` 至其 `/v1`，再完整核对其余配置及凭据与备份一致。模型不变、语速 1.0、100ms 停口确认保持。两次开场及重连成功；正式问答单轮内存终端有效首音 1049.2ms，GPU 统计 927.1ms，尚不能宣称一秒验收通过。
+
+三次插话均有真实识别及新回复，但模型未调用挂断工具，自动挂断未通过，暂需手动结束。等待后的 WebSocket clean close 1000 原因未确定；本次没有进行浏览器或电话设备验收。详细成功与失败结果见[GPU 上线记录](openi-model-service.md#2026-11-17-管线优化上线)和[脱敏报告](../experiments/openi_latency/results/2026-11-17-pipeline-deployment.json)。
+
+回滚前先检查活动通话、可用 GPU 地址及匹配的业务包，再恢复相应发布链接和配置。旧 GPU 任务已经停止，直接恢复旧地址不会恢复服务；若重建任务，须重新核验平台分配地址及实际 ready。数据库备份包含历史时点的数据，不能直接覆盖上线后新增的历史。旧共享虚拟环境仍承载此前发布，清理时不要删除它。
