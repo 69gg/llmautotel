@@ -1,8 +1,10 @@
 # OpenI 语音延迟原型（实验）
 
-TTS 候选任务使用 `tts_autotest.py`：在同一 GPU 以相同参考音、文本与输出采样率重跑 Qwen3、CosyVoice3 和必要时的 VoxCPM1.5，并分别记录加载预热、有效首音、RTF 及播放队列断粮。vLLM/Vox 环境必须不继承系统 site-packages，再重放完整业务模型依赖并安装候选引擎，避免新 Torch 加载镜像中旧 FlashAttention CUDA 扩展的 ABI 错误。准备失败只记失败，不当作模型慢。`--vllm-only` 用于修复后配对重测 Qwen 与 CosyVoice3 vLLM，不重复已完成的其他候选。下载、编译、推理仅在 GPU，准备阶段超时 7200 秒；有进度的下载不因短时无日志而中断。
+TTS 候选任务使用 `tts_autotest.py`：在同一 GPU 以相同参考音、文本与输出采样率重跑 Qwen3、CosyVoice3 和必要时的 VoxCPM1.5，并分别记录加载预热、有效首音、RTF 及播放队列断粮。vLLM 替换 Torch，必须使用不继承系统 site-packages 的环境，避免加载旧 FlashAttention CUDA 扩展。Vox 与镜像共用 Torch 2.6，按 `requirements-voxcpm.lock` 重放全部非 CUDA 依赖，安装前后检查 Torch、torchaudio 版本和真实 CUDA 运算，避免重复下载整套 CUDA。准备失败只记失败，不当作模型慢。`--vllm-only` 与 `--vox-only` 分别补测候选和配对 Qwen 基线，不重复其他候选；二者互斥。下载、编译、推理仅在 GPU，准备阶段超时 7200 秒；有进度的下载不因短时无日志而中断。
 
 依赖下载另设 `UV_HTTP_TIMEOUT=600`、`UV_HTTP_RETRIES=5`、`UV_CONCURRENT_DOWNLOADS=4`，避免只延长父进程却仍沿用下载器的默认短超时；显式传入的同名环境变量优先。此项只改善环境准备可靠性，不计作模型推理提速。
+
+OpenI 启动文件 `tts_vox_autotest.py` 对应 `--vox-only`，`tts_vllm_autotest.py` 对应 `--vllm-only`。二者均需与同目录的依赖锁及原缓存镜像配套上传，不单独拷贝入口文件。
 
 常驻服务模板 `settings.service.json` 启用 `service_tts_first_audio_priority`：每段 TTS 首个非空 PCM 生成前暂停 LLM 的后续 token 解码，首块交付前恢复；可关闭作同链路对照。取消、超时、异常和无输出均释放等待，不改变打断、上下文或挂断规则。该策略只调度后续解码，不能抢占已提交的 GPU 算子。服务需更新代码并重启；测量仍以停口到有效音频为准。
 

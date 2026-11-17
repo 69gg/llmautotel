@@ -1,0 +1,250 @@
+{
+  "status": "in_progress",
+  "measured_at": "2026-11-17T17:03:01.427574+00:00",
+  "gpu": "A100 PCIe 40GB",
+  "scope": "same_reference_and_texts_24khz_pcm_in_memory_not_device",
+  "reports": {
+    "qwen3_graph4": {
+      "scope": "fixed_text_effective_audio_in_memory_not_device",
+      "samples": [
+        {
+          "repeat": 0,
+          "case": 0,
+          "text": "它可以帮您整理文档、总结会议、辅助写作。",
+          "ok": true,
+          "first_pcm_ms": 267.2,
+          "effective_audio_ms": 307.2,
+          "total_ms": 1593.7,
+          "audio_ms": 3940.0,
+          "rtf": 0.4045,
+          "chunks": 13,
+          "starvation_ms": 0.0,
+          "starvation_events": 0
+        },
+        {
+          "repeat": 0,
+          "case": 1,
+          "text": "订阅每月99元。",
+          "ok": true,
+          "first_pcm_ms": 266.9,
+          "effective_audio_ms": 326.9,
+          "total_ms": 995.6,
+          "audio_ms": 2400.0,
+          "rtf": 0.4149,
+          "chunks": 8,
+          "starvation_ms": 0.0,
+          "starvation_events": 0
+        },
+        {
+          "repeat": 0,
+          "case": 2,
+          "text": "支持先试用再订阅。",
+          "ok": true,
+          "first_pcm_ms": 267.9,
+          "effective_audio_ms": 307.9,
+          "total_ms": 807.6,
+          "audio_ms": 1940.0,
+          "rtf": 0.4163,
+          "chunks": 6,
+          "starvation_ms": 0.0,
+          "starvation_events": 0
+        },
+        {
+          "repeat": 1,
+          "case": 0,
+          "text": "它可以帮您整理文档、总结会议、辅助写作。",
+          "ok": true,
+          "first_pcm_ms": 159.9,
+          "effective_audio_ms": 159.9,
+          "total_ms": 1426.0,
+          "audio_ms": 4080.0,
+          "rtf": 0.3495,
+          "chunks": 13,
+          "starvation_ms": 0.0,
+          "starvation_events": 0
+        },
+        {
+          "repeat": 1,
+          "case": 1,
+          "text": "订阅每月99元。",
+          "ok": true,
+          "first_pcm_ms": 265.9,
+          "effective_audio_ms": 305.9,
+          "total_ms": 887.2,
+          "audio_ms": 2160.0,
+          "rtf": 0.4107,
+          "chunks": 7,
+          "starvation_ms": 0.0,
+          "starvation_events": 0
+        },
+        {
+          "repeat": 1,
+          "case": 2,
+          "text": "支持先试用再订阅。",
+          "ok": true,
+          "first_pcm_ms": 266.1,
+          "effective_audio_ms": 306.1,
+          "total_ms": 907.7,
+          "audio_ms": 2260.0,
+          "rtf": 0.4016,
+          "chunks": 7,
+          "starvation_ms": 0.0,
+          "starvation_events": 0
+        }
+      ],
+      "engine": "qwen3",
+      "preparation_ms": 30411.7,
+      "config": {
+        "reference_audio": "/tmp/code/llmautotel-latency/CosyVoice/asset/zero_shot_prompt.wav",
+        "reference_text": "You are a helpful assistant.<|endofprompt|>希望你以后能够做的比我还好呦。",
+        "warmup_texts": [
+          "它可以整理文档。"
+        ],
+        "texts": [
+          "它可以帮您整理文档、总结会议、辅助写作。",
+          "订阅每月99元。",
+          "支持先试用再订阅。"
+        ],
+        "repeats": 2,
+        "cpu_threads": 4,
+        "model_path": "/tmp/llmautotel-qwen3-model",
+        "chunk_size": 4
+      },
+      "gpu": "NVIDIA A100-PCIE-40GB",
+      "native_sample_rate": 24000,
+      "output_sample_rate": 24000,
+      "versions": {
+        "torch": "2.6.0"
+      }
+    },
+    "cosyvoice3_native_5ms": {
+      "scope": "fixed_text_effective_audio_in_memory_not_device",
+      "samples": [
+        {
+          "repeat": 0,
+          "case": 0,
+          "text": "它可以帮您整理文档、总结会议、辅助写作。",
+          "ok": true,
+          "first_pcm_ms": 1633.4,
+          "effective_audio_ms": 1673.4,
+          "total_ms": 3106.1,
+          "audio_ms": 3700.0,
+          "rtf": 0.8395,
+          "chunks": 3,
+          "starvation_ms": 0.0,
+          "starvation_events": 0
+        },
+        {
+          "repeat": 0,
+          "case": 1,
+          "text": "订阅每月99元。",
+          "ok": true,
+          "first_pcm_ms": 1333.6,
+          "effective_audio_ms": 1373.6,
+          "total_ms": 1713.9,
+          "audio_ms": 1680.0,
+          "rtf": 1.0202,
+          "chunks": 2,
+          "starvation_ms": 0.0,
+          "starvation_events": 0
+        },
+        {
+          "repeat": 0,
+          "case": 2,
+          "text": "支持先试用再订阅。",
+          "ok": true,
+          "first_pcm_ms": 1367.6,
+          "effective_audio_ms": 1407.6,
+          "total_ms": 1745.8,
+          "audio_ms": 1840.0,
+          "rtf": 0.9488,
+          "chunks": 2,
+          "starvation_ms": 0.0,
+          "starvation_events": 0
+        },
+        {
+          "repeat": 1,
+          "case": 0,
+          "text": "它可以帮您整理文档、总结会议、辅助写作。",
+          "ok": true,
+          "first_pcm_ms": 1422.6,
+          "effective_audio_ms": 1462.6,
+          "total_ms": 3194.3,
+          "audio_ms": 4220.0,
+          "rtf": 0.7569,
+          "chunks": 3,
+          "starvation_ms": 0.0,
+          "starvation_events": 0
+        },
+        {
+          "repeat": 1,
+          "case": 1,
+          "text": "订阅每月99元。",
+          "ok": true,
+          "first_pcm_ms": 1423.2,
+          "effective_audio_ms": 1463.2,
+          "total_ms": 2047.9,
+          "audio_ms": 2460.0,
+          "rtf": 0.8325,
+          "chunks": 2,
+          "starvation_ms": 0.0,
+          "starvation_events": 0
+        },
+        {
+          "repeat": 1,
+          "case": 2,
+          "text": "支持先试用再订阅。",
+          "ok": true,
+          "first_pcm_ms": 1439.9,
+          "effective_audio_ms": 1479.9,
+          "total_ms": 1884.8,
+          "audio_ms": 2140.0,
+          "rtf": 0.8808,
+          "chunks": 2,
+          "starvation_ms": 0.0,
+          "starvation_events": 0
+        }
+      ],
+      "engine": "cosyvoice3",
+      "preparation_ms": 42843.6,
+      "config": {
+        "reference_audio": "/tmp/code/llmautotel-latency/CosyVoice/asset/zero_shot_prompt.wav",
+        "reference_text": "You are a helpful assistant.<|endofprompt|>希望你以后能够做的比我还好呦。",
+        "warmup_texts": [
+          "它可以整理文档。"
+        ],
+        "texts": [
+          "它可以帮您整理文档、总结会议、辅助写作。",
+          "订阅每月99元。",
+          "支持先试用再订阅。"
+        ],
+        "repeats": 2,
+        "cpu_threads": 4,
+        "model_path": "/tmp/pretrainmodel/Fun-CosyVoice3-0.5B-2512",
+        "fp16": true,
+        "load_vllm": false,
+        "poll_interval_seconds": 0.005
+      },
+      "gpu": "NVIDIA A100-PCIE-40GB",
+      "native_sample_rate": 24000,
+      "output_sample_rate": 24000,
+      "versions": {
+        "torch": "2.6.0"
+      }
+    }
+  },
+  "pending": [
+    "voxcpm15_compiled",
+    "cosyvoice3_vllm_isolated_retry"
+  ],
+  "production": {
+    "task_id": 937439,
+    "platform_status": "RUNNING",
+    "health_verified": false,
+    "public_ingress": "TCP_connection_timeout_from_business_server",
+    "business_source_files_verified": 29,
+    "business_health": "ok",
+    "voice_restored": false
+  },
+  "candidate_task_id": 937384
+}

@@ -1,0 +1,5 @@
+voxcpm==1.5.0
+torch==2.6.0
+torchaudio==2.6.0
+transformers==4.51.3
+numpy==1.26.4

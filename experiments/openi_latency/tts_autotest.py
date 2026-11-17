@@ -126,10 +126,29 @@ def install(root: Path, environment: Path, packages: list[str]) -> None:
     )
 
 
+def prepare_voxcpm(root: Path, environment: Path) -> None:
+    """Vox 与镜像共用同版 CUDA；仅重放非 CUDA 依赖，前后验证运行时。"""
+    expected = json.loads((root / "settings.run.json").read_text())["torch_version"]
+    probe = (
+        "import sys, torch, torchaudio; "
+        "assert torch.__version__.split('+')[0] == sys.argv[1]; "
+        "assert torchaudio.__version__.split('+')[0] == sys.argv[1]; "
+        "assert torch.cuda.is_available(); torch.ones(1,device='cuda').sum().item()"
+    )
+    command = [str(environment / "bin/python"), "-c", probe, expected]
+    subprocess.run(command, check=True, timeout=60)
+    prepare_cached_environment(root, environment, "requirements-voxcpm.lock")
+    subprocess.run(command, check=True, timeout=60)
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--vllm-only", action="store_true", help="补测隔离环境中的 vLLM，并重跑配对 Qwen 基线"
+    )
+    mode.add_argument(
+        "--vox-only", action="store_true", help="复用镜像 CUDA 补测 Vox，并重跑配对 Qwen 基线"
     )
     arguments = parser.parse_args(argv)
     root = Path(__file__).resolve().parent
@@ -186,41 +205,38 @@ def main(argv: list[str] | None = None) -> None:
         "load_vllm": False,
         "poll_interval_seconds": 0.005,
     }
-    if not arguments.vllm_only:
+    if not arguments.vllm_only and not arguments.vox_only:
         candidate("cosyvoice3_native_5ms", "cosyvoice3", "/tmp/llmautotel-latency-worker", cosy)
-    try:
-        environment = Path("/tmp/llmautotel-cosy-vllm")
-        install(
-            root,
-            environment,
-            ["vllm==0.9.0", "torchaudio==2.7.0", "transformers==4.51.3", "numpy==1.26.4"],
-        )
-        source, writable = Path(cosy["model_path"]), Path("/tmp/cosyvoice3-vllm-model")
-        writable.mkdir(exist_ok=True)
-        for item in source.iterdir():
-            target = writable / item.name
-            if not target.exists():
-                target.symlink_to(item)
-        candidate(
-            "cosyvoice3_vllm_5ms",
-            "cosyvoice3",
-            str(environment),
-            cosy | {"model_path": str(writable), "load_vllm": True},
-        )
-    except Exception as exc:
-        reports["cosyvoice3_vllm_5ms"] = {"error": type(exc).__name__, "detail": str(exc)[:500]}
+    if not arguments.vox_only:
+        try:
+            environment = Path("/tmp/llmautotel-cosy-vllm")
+            install(
+                root,
+                environment,
+                ["vllm==0.9.0", "torchaudio==2.7.0", "transformers==4.51.3", "numpy==1.26.4"],
+            )
+            source, writable = Path(cosy["model_path"]), Path("/tmp/cosyvoice3-vllm-model")
+            writable.mkdir(exist_ok=True)
+            for item in source.iterdir():
+                target = writable / item.name
+                if not target.exists():
+                    target.symlink_to(item)
+            candidate(
+                "cosyvoice3_vllm_5ms",
+                "cosyvoice3",
+                str(environment),
+                cosy | {"model_path": str(writable), "load_vllm": True},
+            )
+        except Exception as exc:
+            reports["cosyvoice3_vllm_5ms"] = {"error": type(exc).__name__, "detail": str(exc)[:500]}
     try:
         winner = choose_fastest(reports, baseline="qwen3_graph4")
     except ValueError:
         winner = "none"
-    if not arguments.vllm_only and not winner.startswith("cosyvoice3"):
+    if not arguments.vllm_only and (arguments.vox_only or not winner.startswith("cosyvoice3")):
         try:
-            environment = Path("/tmp/llmautotel-voxcpm15")
-            install(
-                root,
-                environment,
-                ["voxcpm==1.5.0", "torch==2.6.0", "torchaudio==2.6.0", "transformers==4.51.3"],
-            )
+            environment = Path("/tmp/llmautotel-latency-worker")
+            prepare_voxcpm(root, environment)
             # Download only on the GPU; a long deadline and domestic mirror avoid repeated restarts.
             downloader = (
                 "from modelscope import snapshot_download; "

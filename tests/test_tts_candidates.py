@@ -130,3 +130,54 @@ def test_pcm_passthrough_clips_without_changing_sample_count() -> None:
         0,
         32767,
     ]
+
+
+def test_vox_replays_only_non_cuda_dependencies_between_runtime_checks(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from experiments.openi_latency.tts_autotest import prepare_voxcpm
+
+    (tmp_path / "settings.run.json").write_text('{"torch_version":"2.6.0"}')
+    (tmp_path / "requirements-voxcpm.lock").write_text(
+        "torch==2.6.0\ntorchaudio==2.6.0\nnvidia-cublas-cu12==12.4.5.8\nvoxcpm==1.5.0\n"
+    )
+    commands: list[list[str]] = []
+    monkeypatch.setattr(
+        "experiments.openi_latency.tts_autotest.subprocess.run",
+        lambda args, **kwargs: commands.append(args),
+    )
+    prepare_voxcpm(tmp_path, tmp_path / "cached")
+    assert len(commands) == 3 and commands[0] == commands[2]
+    assert commands[0][-1] == "2.6.0"
+    assert "torch.cuda.is_available()" in commands[0][2]
+    assert "--no-deps" in commands[1]
+    lock = (tmp_path / "requirements-voxcpm.lock.image.run.lock").read_text()
+    assert lock == "voxcpm==1.5.0\n"
+
+
+def test_vox_refuses_to_install_when_cached_cuda_runtime_fails(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import subprocess
+
+    from experiments.openi_latency.tts_autotest import prepare_voxcpm
+
+    (tmp_path / "settings.run.json").write_text('{"torch_version":"2.6.0"}')
+    calls: list[list[str]] = []
+
+    def fail(args: list[str], **kwargs: Any) -> None:
+        calls.append(args)
+        raise subprocess.CalledProcessError(1, args)
+
+    monkeypatch.setattr("experiments.openi_latency.tts_autotest.subprocess.run", fail)
+    with pytest.raises(subprocess.CalledProcessError):
+        prepare_voxcpm(tmp_path, tmp_path / "cached")
+    assert len(calls) == 1
+
+
+def test_candidate_retry_modes_are_exclusive_before_any_gpu_work() -> None:
+    from experiments.openi_latency.tts_autotest import main
+
+    with pytest.raises(SystemExit) as error:
+        main(["--vox-only", "--vllm-only"])
+    assert error.value.code == 2
