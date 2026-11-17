@@ -74,8 +74,14 @@ def benchmark(
     return {"scope": "fixed_text_effective_audio_in_memory_not_device", "samples": rows}
 
 
-def choose_fastest(reports: dict[str, dict[str, Any]]) -> str:
+def choose_fastest(reports: dict[str, dict[str, Any]], *, baseline: str | None = None) -> str:
     """只选全部配对文本成功、持续供音通过的候选，不选单个幸运首包。"""
+    if baseline is not None:
+        control = reports.get(baseline, {})
+        if control.get("error") or not control.get("samples") or any(
+            not row.get("ok") for row in control.get("samples", [])
+        ):
+            raise ValueError("unverified_tts_baseline")
     expected: set[tuple[int, int, str]] | None = None
     scores: dict[str, float] = {}
     for name, report in reports.items():

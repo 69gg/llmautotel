@@ -46,6 +46,31 @@ def test_selection_requires_same_text_and_repeats_and_all_successful_samples() -
     assert choose_fastest({"baseline": report(300), "failed": failed}) == "baseline"
 
 
+def test_failed_baseline_cannot_promote_an_uncompared_model() -> None:
+    with pytest.raises(ValueError, match="unverified_tts_baseline"):
+        choose_fastest(
+            {"qwen": {"error": "ModuleNotFoundError"}, "vox": report(80)}, baseline="qwen"
+        )
+
+
+def test_cached_environment_replays_non_cuda_locked_dependencies(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from experiments.openi_latency.tts_autotest import prepare_cached_environment
+
+    (tmp_path / "test.lock").write_text("torch==2.6.0\nfaster-qwen3-tts==0.5.4\nwget==3.2\n")
+    commands: list[list[str]] = []
+    monkeypatch.setattr(
+        "experiments.openi_latency.tts_autotest.subprocess.run",
+        lambda args, **kwargs: commands.append(args),
+    )
+    prepare_cached_environment(tmp_path, tmp_path / "venv", "test.lock")
+    actual = (tmp_path / "test.lock.image.run.lock").read_text()
+    assert "torch==" not in actual
+    assert "wget==3.2" in actual and "faster-qwen3-tts==0.5.4" in actual
+    assert "--no-deps" in commands[0] and "-r" in commands[0]
+
+
 def test_resampling_keeps_duration_and_frequency_across_arbitrary_chunk_boundaries() -> None:
     source_rate = 44100
     wave = np.sin(np.arange(source_rate, dtype=np.float32) * (2 * np.pi * 440 / source_rate)) * 0.2

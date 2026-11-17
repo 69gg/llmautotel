@@ -10,6 +10,33 @@ from pathlib import Path
 from typing import Any
 
 
+def prepare_cached_environment(root: Path, environment: Path, lock_name: str) -> None:
+    """镜像只缓存权重和部分依赖；重放完整锁，不能把目录存在当作准备完成。"""
+    if __package__:
+        from .prepare_worker import image_requirements
+    else:
+        from prepare_worker import image_requirements
+
+    requirements = root / (lock_name + ".image.run.lock")
+    requirements.write_text(image_requirements((root / lock_name).read_text()))
+    subprocess.run(
+        [
+            str(environment / "bin/uv"),
+            "pip",
+            "install",
+            "--python",
+            str(environment / "bin/python"),
+            "--index-url",
+            "https://mirrors.aliyun.com/pypi/simple",
+            "--no-deps",
+            "-r",
+            str(requirements),
+        ],
+        check=True,
+        timeout=7200,
+    )
+
+
 def run_candidate(
     root: Path, name: str, engine: str, python: Path, config: dict[str, Any]
 ) -> dict[str, Any]:
@@ -80,6 +107,13 @@ def main() -> None:
     subprocess.run(["tar", "-xzf", "cosyvoice-source.tar.gz"], check=True)
     from tts_candidates import choose_fastest
 
+    prepare_cached_environment(
+        root, Path("/tmp/llmautotel-qwen3-worker"), "requirements-qwen3-tts.lock"
+    )
+    prepare_cached_environment(
+        root, Path("/tmp/llmautotel-latency-worker"), "requirements-worker.lock"
+    )
+
     base: dict[str, Any] = {
         "reference_audio": str(root / "CosyVoice/asset/zero_shot_prompt.wav"),
         "reference_text": (
@@ -123,7 +157,10 @@ def main() -> None:
     candidate("cosyvoice3_native_5ms", "cosyvoice3", "/tmp/llmautotel-latency-worker", cosy)
     try:
         environment = Path("/tmp/llmautotel-cosy-vllm")
-        install(environment, ["vllm==0.9.0", "torchaudio==2.7.0"])
+        install(
+            environment,
+            ["vllm==0.9.0", "torchaudio==2.7.0", "transformers==4.51.3", "numpy==1.26.4"],
+        )
         source, writable = Path(cosy["model_path"]), Path("/tmp/cosyvoice3-vllm-model")
         writable.mkdir(exist_ok=True)
         for item in source.iterdir():
@@ -139,7 +176,7 @@ def main() -> None:
     except Exception as exc:
         reports["cosyvoice3_vllm_5ms"] = {"error": type(exc).__name__, "detail": str(exc)[:500]}
     try:
-        winner = choose_fastest(reports)
+        winner = choose_fastest(reports, baseline="qwen3_graph4")
     except ValueError:
         winner = "none"
     if not winner.startswith("cosyvoice3"):
@@ -180,7 +217,7 @@ def main() -> None:
         except Exception as exc:
             reports["voxcpm15_compiled"] = {"error": type(exc).__name__, "detail": str(exc)[:500]}
     try:
-        winner = choose_fastest(reports)
+        winner = choose_fastest(reports, baseline="qwen3_graph4")
     except ValueError:
         winner = "none"
     result = {
