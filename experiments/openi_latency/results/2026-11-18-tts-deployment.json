@@ -1,6 +1,6 @@
 {
-  "checked_at": "2026-11-17T18:14:02.360337+00:00",
-  "release": "/opt/llmautotel/releases/20261117-tts-5af1990",
+  "checked_at": "2026-11-17T19:36:58.568Z",
+  "release": "/opt/llmautotel/releases/20261118-qwen3-4023485",
   "base_urls": {
     "asr": "https://dd06e868b51941ab.mlunotebook.openi.org.cn/v1",
     "llm": "https://dd06e868b51941ab.mlunotebook.openi.org.cn/v1",
@@ -19,7 +19,8 @@
   "active_call": false,
   "service": {
     "NRestarts": "0",
-    "ActiveState": "active"
+    "ActiveState": "active",
+    "MainPID": 153709
   },
   "gpu_endpoint_checks": [
     {
@@ -35,11 +36,119 @@
       "elapsed_ms": 15029.1
     }
   ],
-  "status": "blocked_official_gpu_endpoint_connection_timeout",
-  "production_task_id": 937439,
+  "status": "business_deployed_gpu_official_ingress_pending",
+  "production_task_id": 937535,
   "gpu_ready_verified": false,
   "configuration_switched": false,
   "full_pipeline_smoke_completed": false,
   "browser_acceptance_performed": false,
-  "local_model_download_or_inference": false
+  "local_model_download_or_inference": false,
+  "previous_attempt": {
+    "checked_at": "2026-11-17T18:14:02.360337+00:00",
+    "release": "/opt/llmautotel/releases/20261117-tts-5af1990",
+    "production_task_id": 937439,
+    "gpu_endpoint_checks": [
+      {
+        "url": "https://ce2b44f296be4d97.mlunotebook.openi.org.cn/health",
+        "error": "URLError",
+        "detail": "<urlopen error timed out>",
+        "elapsed_ms": 15033.2
+      },
+      {
+        "url": "https://dd06e868b51941ab.mlunotebook.openi.org.cn/health",
+        "error": "URLError",
+        "detail": "<urlopen error timed out>",
+        "elapsed_ms": 15029.1
+      }
+    ],
+    "status": "blocked_official_gpu_endpoint_connection_timeout"
+  },
+  "business_code": "4023485bdb9773c2870a384025ade184818bc63a",
+  "gpu_code": "d01df2d92b994cd97bff4d40d64c9be44bea4693",
+  "business_deployed_at": "2026-11-17T19:35:26.767939+00:00",
+  "business_backup": "/var/backups/llmautotel/20261117T193522Z-business-4023485",
+  "independent_environment": true,
+  "installed_source_files_matched": 29,
+  "installed_source_mismatches": [],
+  "authenticated_https": {
+    "page": 200,
+    "health": 200,
+    "active_call": 200,
+    "system_ca_verified": true
+  },
+  "production_task_name": "voice-qwen3-20261118r1",
+  "production_task_status": "RUNNING",
+  "production_task_start_time": "2026-11-17T19:20:45+00:00",
+  "expected_official_gpu_base": "https://dd4f414e59884ec8.mlunotebook.openi.org.cn",
+  "official_endpoint_api": {
+    "code": 99,
+    "msg": "服务加载中，请稍后再试。"
+  },
+  "current_gpu_endpoint_checks": [
+    {
+      "url": "https://dd4f414e59884ec8.mlunotebook.openi.org.cn/health",
+      "error": "URLError",
+      "elapsed_ms": 24157.7
+    },
+    {
+      "url": "http://dd4f414e59884ec8.mlunotebook.openi.org.cn/health",
+      "error": "URLError",
+      "elapsed_ms": 24080.4
+    }
+  ],
+  "official_gateway_tcp_checks": [
+    {
+      "ip": "120.237.18.54",
+      "port": 443,
+      "connected": false,
+      "timeout_seconds": 5
+    },
+    {
+      "ip": "210.22.22.132",
+      "port": 443,
+      "connected": false,
+      "timeout_seconds": 5
+    },
+    {
+      "ip": "218.17.115.247",
+      "port": 443,
+      "connected": false,
+      "timeout_seconds": 5
+    }
+  ],
+  "openi_dashboard_tcp_check": {
+    "host": "openi.pcl.ac.cn",
+    "port": 443,
+    "connected": true,
+    "elapsed_ms": 168.5
+  },
+  "old_production_task": {
+    "id": 937439,
+    "status": "STOPPED",
+    "stopped_at": "2026-11-17T19:19:45+00:00",
+    "startup_log_confirmed_listening_8000": true
+  },
+  "experiment_tasks": [
+    {
+      "id": 937384,
+      "status": "SUCCEEDED"
+    },
+    {
+      "id": 937477,
+      "status": "SUCCEEDED"
+    },
+    {
+      "id": 937518,
+      "status": "SUCCEEDED"
+    }
+  ],
+  "reverse_tunnel_enabled": false,
+  "validation": {
+    "backend_passed": 558,
+    "backend_skipped": 3,
+    "backend_warnings": 62,
+    "frontend_passed": 81,
+    "ruff": "passed",
+    "frontend_build": "passed"
+  }
 }
