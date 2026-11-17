@@ -667,8 +667,9 @@ sentencepiece==0.2.3
     #   xgrammar
 sentry-sdk==2.75.0
     # via fastapi-cloud-cli
-setuptools==84.2.1
+setuptools==80.9.0
     # via
+    #   -r experiments/openi_latency/requirements-cosy-vllm.in
     #   tensorboard
     #   triton
 shellingham==1.5.4

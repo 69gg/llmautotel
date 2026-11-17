@@ -1,6 +1,6 @@
 {
-  "status": "in_progress",
-  "measured_at": "2026-11-17T18:13:16.982559+00:00",
+  "status": "completed_with_vllm_initialization_failure",
+  "measured_at": "2026-11-17T18:45:13.458633+00:00",
   "gpu": "A100 PCIe 40GB",
   "scope": "same_reference_and_texts_24khz_pcm_in_memory_not_device",
   "reports": {
@@ -347,9 +347,7 @@
       }
     }
   },
-  "pending": [
-    "cosyvoice3_vllm_isolated_retry"
-  ],
+  "pending": [],
   "production": {
     "task_id": 937439,
     "platform_status": "RUNNING",
@@ -368,7 +366,8 @@
         "cosyvoice3_native_5ms"
       ],
       "status": "SUCCEEDED",
-      "inference_scope": "same_reference_texts_and_sample_rate"
+      "inference_scope": "same_reference_texts_and_sample_rate",
+      "experimental_gpu_released": true
     },
     {
       "task_id": 937477,
@@ -602,13 +601,14 @@
           }
         }
       },
-      "winner": "qwen3_graph4"
+      "winner": "qwen3_graph4",
+      "experimental_gpu_released": true
     },
     {
       "task_id": 937518,
-      "status": "RUNNING",
+      "status": "SUCCEEDED",
       "commit": "143dbc2f866bceb59f016f735b09711d9ad3792a",
-      "phase": "installing_isolated_vllm_dependencies_from_aliyun",
+      "phase": "completed_with_candidate_initialization_failure",
       "reports": {
         "qwen3_graph4": {
           "scope": "fixed_text_effective_audio_in_memory_not_device",
@@ -722,8 +722,37 @@
           "versions": {
             "torch": "2.6.0"
           }
+        },
+        "cosyvoice3_vllm_5ms": {
+          "error": "candidate_failed",
+          "returncode": 1,
+          "failure_evidence": [
+            " - setuptools==65.5.0",
+            " + setuptools==80.9.0",
+            " - setuptools==65.5.0",
+            " + setuptools==84.2.1",
+            "    __import__(\"pkg_resources\").declare_namespace(__name__)",
+            "ModuleNotFoundError: No module named 'pkg_resources'",
+            "    raise ErrorDuringImport(path, sys.exc_info())",
+            "pydoc.ErrorDuringImport: problem in cosyvoice.flow.flow_matching - ModuleNotFoundError: No module named 'pkg_resources'"
+          ],
+          "dependency_fix": {
+            "setuptools": "80.9.0",
+            "legacy_import_verified_on_local_lightweight_environment": true,
+            "gpu_retested": false
+          }
         }
-      }
+      },
+      "winner": "qwen3_graph4",
+      "experimental_gpu_released": true
     }
-  ]
+  ],
+  "winner": "qwen3_graph4",
+  "selection_basis": "paired_effective_audio_median_with_success_rtf_and_starvation_gates",
+  "unverified": [
+    "cosyvoice3_vllm_after_setuptools_fix",
+    "production_full_pipeline",
+    "browser_and_device_audio"
+  ],
+  "all_experimental_gpus_released": true
 }

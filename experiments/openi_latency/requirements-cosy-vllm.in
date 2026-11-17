@@ -1,2 +1,4 @@
 -r requirements-worker.in
 vllm==0.9.0
+# Matcha-TTS imports pkg_resources; setuptools 82 removed that module.
+setuptools==80.9.0

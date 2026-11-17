@@ -296,6 +296,6 @@ MiMo TTS 单项连续三次请求到首块 PCM 为 **1127.7、1831.6、621.5 ms*
 
 补齐隔离环境依赖后，后端完整自动化为 558 passed、3 skipped、62 warnings（40.89s），Ruff 与差异检查通过；使用 `uv run --frozen python -m pytest -q`，不在本机下载或运行模型。
 
-OpenI 同一 A10040GB、参考音、3 句文本各 2 次的实测中，任务 937384 的 Qwen graph4 / CosyVoice3 原生优化版有效首音中位为 306.65 / 1462.9ms；任务 937477 的配对 Qwen / VoxCPM1.5 编译版为 304.95 / 407.4ms。四组均 6/6 输出有效 PCM 且播放队列无断粮，但 Cosy 一条 RTF 超过 1；Vox 使用官方编译与参考缓存，最快 89.4ms、最慢 841.8ms，不能用最快值代表稳定速度。两项实验任务已 SUCCEEDED 并释放 GPU。隔离后的 CosyVoice3 vLLM 任务 937518 仍在准备依赖，最终选型待其有效结果。
+OpenI 同一 A10040GB、参考音、3 句文本各 2 次的实测中，任务 937384 的 Qwen graph4 / CosyVoice3 原生优化版有效首音中位为 306.65 / 1462.9ms；任务 937477 的配对 Qwen / VoxCPM1.5 编译版为 304.95 / 407.4ms。四组均 6/6 输出有效 PCM 且播放队列无断粮，但 Cosy 一条 RTF 超过 1；Vox 使用官方编译与参考缓存，最快 89.4ms、最慢 841.8ms，不能用最快值代表稳定速度。补测 937518 的 Qwen 中位 206.0ms，单条播放队列断粮 9.2ms；Cosy vLLM 在初始化时因缺少 pkg_resources 失败，没有延迟样本。已将 setuptools 固定为 80.9.0，轻量导入检查通过，修正后的 GPU vLLM 未复测。三项实验任务均已 SUCCEEDED 并释放 GPU，按已完成实测保留 Qwen3-TTS graph4。任务成功不代表失败候选通过。
 
 正式任务 937439 虽为 RUNNING，其官方入口与原配置旧入口均连接超时；网页服务 active、健康 ok、无活动通话、重启计数 0，配置保留 GPU 管线及语速 1.0。尚未验证正式 GPU ready、鉴权、模型目录或实际 PCM，因此未切换地址，也未完成部署后的完整链路验收；不能把候选 TTS 单项结果作为用户停口到终端首音。脱敏检查见[当前部署报告](../experiments/openi_latency/results/2026-11-18-tts-deployment.json)，逐条样本见[候选报告](../experiments/openi_latency/results/2026-11-18-tts-candidates.json)。
