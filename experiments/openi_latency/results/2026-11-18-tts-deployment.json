@@ -150,5 +150,26 @@
     "frontend_passed": 81,
     "ruff": "passed",
     "frontend_build": "passed"
-  }
+  },
+  "deployment_preflight": {
+    "checked_at": "2026-11-17T19:44:51+00:00",
+    "status": "deployment_not_completed",
+    "error": "URLError",
+    "failed_gate": "gpu_health_before_configuration_or_release_mutation",
+    "configuration_switched": false
+  },
+  "dns_crosscheck": {
+    "sources": [
+      "Google DNS over HTTPS",
+      "Cloudflare DNS over HTTPS"
+    ],
+    "cname": "eval.openi.org.cn",
+    "addresses": [
+      "120.237.18.54",
+      "210.22.22.132",
+      "218.17.115.247"
+    ],
+    "agreed": true
+  },
+  "gpu_source_bundle_files_matched_business": 29
 }
