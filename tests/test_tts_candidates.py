@@ -101,6 +101,29 @@ def test_candidate_environment_rejects_inherited_cuda_extensions(
     assert not commands
 
 
+def test_dependency_downloads_use_long_timeout_and_preserve_overrides(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from experiments.openi_latency.tts_autotest import prepare_cached_environment
+
+    (tmp_path / "test.lock").write_text("wget==3.2\n")
+    environments: list[dict[str, str]] = []
+
+    def capture(args: list[str], **kwargs: Any) -> None:
+        environments.append(kwargs["env"])
+
+    monkeypatch.delenv("UV_HTTP_TIMEOUT", raising=False)
+    monkeypatch.delenv("UV_HTTP_RETRIES", raising=False)
+    monkeypatch.setenv("UV_CONCURRENT_DOWNLOADS", "2")
+    monkeypatch.setenv("TTS_DOWNLOAD_TEST", "preserved")
+    monkeypatch.setattr("experiments.openi_latency.tts_autotest.subprocess.run", capture)
+    prepare_cached_environment(tmp_path, tmp_path / "venv", "test.lock")
+    assert environments[0]["UV_HTTP_TIMEOUT"] == "600"
+    assert environments[0]["UV_HTTP_RETRIES"] == "5"
+    assert environments[0]["UV_CONCURRENT_DOWNLOADS"] == "2"
+    assert environments[0]["TTS_DOWNLOAD_TEST"] == "preserved"
+
+
 def test_pcm_passthrough_clips_without_changing_sample_count() -> None:
     assert np.frombuffer(FloatPCM(24000).feed([-2, 0, 2]), dtype="<i2").tolist() == [
         -32767,

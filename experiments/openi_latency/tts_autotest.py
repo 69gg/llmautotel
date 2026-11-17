@@ -10,6 +10,16 @@ from pathlib import Path
 from typing import Any
 
 
+def download_environment() -> dict[str, str]:
+    """长准备期限也覆盖下载器自身；保留调用方显式设置。"""
+    defaults = {
+        "UV_HTTP_TIMEOUT": "600",
+        "UV_HTTP_RETRIES": "5",
+        "UV_CONCURRENT_DOWNLOADS": "4",
+    }
+    return defaults | dict(os.environ)
+
+
 def prepare_cached_environment(
     root: Path, environment: Path, lock_name: str, *, installer: Path | None = None
 ) -> None:
@@ -36,6 +46,7 @@ def prepare_cached_environment(
         ],
         check=True,
         timeout=7200,
+        env=download_environment(),
     )
 
 
@@ -111,6 +122,7 @@ def install(root: Path, environment: Path, packages: list[str]) -> None:
         ],
         check=True,
         timeout=7200,
+        env=download_environment(),
     )
 
 
