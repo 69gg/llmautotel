@@ -113,7 +113,7 @@ pnpm dev
 ## 验证
 
 ```sh
-uv run pytest
+uv run python -m pytest
 uv run ruff check src tests
 pnpm --dir frontend test
 pnpm --dir frontend build

@@ -1,6 +1,6 @@
 {
   "status": "in_progress",
-  "measured_at": "2026-11-17T17:03:01.427574+00:00",
+  "measured_at": "2026-11-17T17:46:20.098Z",
   "gpu": "A100 PCIe 40GB",
   "scope": "same_reference_and_texts_24khz_pcm_in_memory_not_device",
   "reports": {
@@ -246,5 +246,135 @@
     "business_health": "ok",
     "voice_restored": false
   },
-  "candidate_task_id": 937384
+  "candidate_task_id": 937477,
+  "paired_tasks": [
+    {
+      "task_id": 937384,
+      "reports": [
+        "qwen3_graph4",
+        "cosyvoice3_native_5ms"
+      ],
+      "status": "SUCCEEDED",
+      "inference_scope": "same_reference_texts_and_sample_rate"
+    },
+    {
+      "task_id": 937477,
+      "status": "RUNNING",
+      "reports": {
+        "qwen3_graph4": {
+          "scope": "fixed_text_effective_audio_in_memory_not_device",
+          "samples": [
+            {
+              "repeat": 0,
+              "case": 0,
+              "text": "它可以帮您整理文档、总结会议、辅助写作。",
+              "ok": true,
+              "first_pcm_ms": 265.1,
+              "effective_audio_ms": 305.1,
+              "total_ms": 1515.7,
+              "audio_ms": 3700,
+              "rtf": 0.4096,
+              "chunks": 12,
+              "starvation_ms": 0,
+              "starvation_events": 0
+            },
+            {
+              "repeat": 0,
+              "case": 1,
+              "text": "订阅每月99元。",
+              "ok": true,
+              "first_pcm_ms": 266,
+              "effective_audio_ms": 306,
+              "total_ms": 692.5,
+              "audio_ms": 1540,
+              "rtf": 0.4497,
+              "chunks": 5,
+              "starvation_ms": 0,
+              "starvation_events": 0
+            },
+            {
+              "repeat": 0,
+              "case": 2,
+              "text": "支持先试用再订阅。",
+              "ok": true,
+              "first_pcm_ms": 264.8,
+              "effective_audio_ms": 344.8,
+              "total_ms": 859.5,
+              "audio_ms": 2000,
+              "rtf": 0.4298,
+              "chunks": 7,
+              "starvation_ms": 0,
+              "starvation_events": 0
+            },
+            {
+              "repeat": 1,
+              "case": 0,
+              "text": "它可以帮您整理文档、总结会议、辅助写作。",
+              "ok": true,
+              "first_pcm_ms": 162.7,
+              "effective_audio_ms": 162.7,
+              "total_ms": 1399.6,
+              "audio_ms": 4000,
+              "rtf": 0.3499,
+              "chunks": 13,
+              "starvation_ms": 0,
+              "starvation_events": 0
+            },
+            {
+              "repeat": 1,
+              "case": 1,
+              "text": "订阅每月99元。",
+              "ok": true,
+              "first_pcm_ms": 158.3,
+              "effective_audio_ms": 198.3,
+              "total_ms": 752.6,
+              "audio_ms": 1960,
+              "rtf": 0.384,
+              "chunks": 7,
+              "starvation_ms": 0,
+              "starvation_events": 0
+            },
+            {
+              "repeat": 1,
+              "case": 2,
+              "text": "支持先试用再订阅。",
+              "ok": true,
+              "first_pcm_ms": 264.8,
+              "effective_audio_ms": 304.8,
+              "total_ms": 881.8,
+              "audio_ms": 2080,
+              "rtf": 0.424,
+              "chunks": 7,
+              "starvation_ms": 0,
+              "starvation_events": 0
+            }
+          ],
+          "engine": "qwen3",
+          "preparation_ms": 30078.3,
+          "config": {
+            "reference_audio": "/tmp/code/llmautotel-latency/CosyVoice/asset/zero_shot_prompt.wav",
+            "reference_text": "You are a helpful assistant.<|endofprompt|>希望你以后能够做的比我还好呦。",
+            "warmup_texts": [
+              "它可以整理文档。"
+            ],
+            "texts": [
+              "它可以帮您整理文档、总结会议、辅助写作。",
+              "订阅每月99元。",
+              "支持先试用再订阅。"
+            ],
+            "repeats": 2,
+            "cpu_threads": 4,
+            "model_path": "/tmp/llmautotel-qwen3-model",
+            "chunk_size": 4
+          },
+          "gpu": "NVIDIA A100-PCIE-40GB",
+          "native_sample_rate": 24000,
+          "output_sample_rate": 24000,
+          "versions": {
+            "torch": "2.6.0"
+          }
+        }
+      }
+    }
+  ]
 }

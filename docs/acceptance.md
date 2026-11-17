@@ -31,7 +31,7 @@
 运行命令：
 
 ```sh
-uv run pytest -q
+uv run python -m pytest -q
 uv run ruff check src tests
 pnpm --dir frontend test
 pnpm --dir frontend build
