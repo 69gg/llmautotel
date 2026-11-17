@@ -11,6 +11,7 @@ import threading
 import time
 import wave
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -148,6 +149,59 @@ async def test_bridge_completion_and_disconnect_cancel_real_producer() -> None:
     assert await anext(stream) == 1
     await stream.aclose()
     assert await asyncio.to_thread(stopped.wait, 3)
+
+
+def test_model_stream_does_not_wait_for_a_busy_default_executor() -> None:
+    async def check() -> None:
+        release = threading.Event()
+        loop = asyncio.get_running_loop()
+        loop.set_default_executor(ThreadPoolExecutor(max_workers=1))
+        busy = loop.run_in_executor(None, release.wait)
+        stream = bridge(lambda stop: iter([b"first pcm", b"next pcm"]))
+        try:
+            assert await asyncio.wait_for(anext(stream), 0.5) == b"first pcm"
+            assert await asyncio.wait_for(anext(stream), 0.5) == b"next pcm"
+        finally:
+            release.set()
+            await busy
+            await stream.aclose()
+
+    asyncio.run(check())
+
+
+async def test_bridge_full_queue_cancellation_closes_producer() -> None:
+    stopped = threading.Event()
+    full = threading.Event()
+    produced: list[int] = []
+
+    def generate(cancelled: threading.Event) -> Iterator[int]:
+        try:
+            for value in range(1000):
+                produced.append(value)
+                if value == 9:
+                    full.set()
+                yield value
+        finally:
+            stopped.set()
+
+    stream = bridge(generate)
+    assert await anext(stream) == 0
+    assert await asyncio.to_thread(full.wait, 1)
+    assert len(produced) <= 10
+    await stream.aclose()
+    assert await asyncio.to_thread(stopped.wait, 1)
+
+
+async def test_bridge_preserves_order_and_reports_producer_failure() -> None:
+    def generate(cancelled: threading.Event) -> Iterator[int]:
+        yield from range(32)
+        raise ValueError("private provider failure")
+
+    seen: list[int] = []
+    with pytest.raises(RuntimeError, match="^model_inference_failed$"):
+        async for value in bridge(generate):
+            seen.append(value)
+    assert seen == list(range(32))
 
 
 def test_wav_limits_reject_wrong_rate_truncated_and_over_budget() -> None:

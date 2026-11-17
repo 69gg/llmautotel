@@ -86,16 +86,18 @@ class PhoneOutputTransport(BaseOutputTransport):
         if not self._owner.ready:
             return False
         try:
-            now = asyncio.get_running_loop().time()
-            delay = self._next_send_at - now
-            if delay > 0:
-                await asyncio.sleep(delay)
+            if self._owner.pace_audio:
+                now = asyncio.get_running_loop().time()
+                delay = self._next_send_at - now
+                if delay > 0:
+                    await asyncio.sleep(delay)
             if self._owner.closed or generation != self._owner.generation:
                 return False
             await self._owner.driver.send_audio(frame.audio)
-            self._next_send_at = asyncio.get_running_loop().time() + (
-                len(frame.audio) / (self.sample_rate * 2)
-            )
+            if self._owner.pace_audio:
+                self._next_send_at = asyncio.get_running_loop().time() + (
+                    len(frame.audio) / (self.sample_rate * 2)
+                )
             return not self._owner.closed and generation == self._owner.generation
         except asyncio.CancelledError:
             raise
@@ -193,12 +195,15 @@ class PhoneTransport(BaseTransport):
         *,
         number: str,
         call_id: str,
+        pace_audio: bool = True,
     ) -> None:
         super().__init__()
         for event in ("on_client_connected", "on_client_disconnected", "on_error"):
             self._register_event_handler(event, sync=True)
         self.number = number
         self.call_id = call_id
+        # GPU 中继由最终媒体出口控速；电话 provider 默认仍按实时节奏发送。
+        self.pace_audio = pace_audio
         self.closed = False
         self.ready = False
         self.generation = 0

@@ -114,6 +114,8 @@ class GPUDriver:
         self.lock = asyncio.Lock()
         self.started = False
         self.closed = False
+        self._sent_audio = 0
+        self._played_audio = 0
 
     async def send(self, event: dict[str, Any] | bytes) -> None:
         async with self.lock:
@@ -126,21 +128,38 @@ class GPUDriver:
         await self.callbacks.on_ready()
 
     async def send_audio(self, audio: bytes) -> None:
-        if not self.started:
-            await self.send({"type": "audio-start", "generation": self.generation})
-            self.started = True
-        await self.send(struct.pack("!I", self.generation) + audio)
+        generation = self.generation
+        if self.closed or not audio:
+            return
+        async with self.lock:
+            if self.closed or generation != self.generation:
+                return
+            if not self.started:
+                await self.websocket.send_json({"type": "audio-start", "generation": generation})
+                if self.closed or generation != self.generation:
+                    return
+                self.started = True
+            # 在 await 之前锁定代次，flush 不能把旧 PCM 重新归入新回复。
+            await self.websocket.send_bytes(struct.pack("!I", generation) + audio)
+            if generation == self.generation:
+                self._sent_audio += 1
 
     async def wait_played(self) -> None:
+        generation, sequence = self.generation, self._sent_audio
+        if self.closed or sequence <= self._played_audio:
+            return
         identity = uuid.uuid4().hex
         future = asyncio.get_running_loop().create_future()
-        self.pending[identity] = self.generation, future
+        self.pending[identity] = generation, future
         try:
-            await self.send({"type": "drain", "generation": self.generation, "id": identity})
+            await self.send({"type": "drain", "generation": generation, "id": identity})
             await asyncio.wait_for(future, 30)
+            if generation == self.generation:
+                self._played_audio = max(self._played_audio, sequence)
         finally:
             self.pending.pop(identity, None)
-            self.started = False
+            if generation == self.generation and sequence == self._sent_audio:
+                self.started = False
 
     def played(self, event: dict[str, Any]) -> None:
         pending = self.pending.get(event.get("id"))
@@ -152,6 +171,7 @@ class GPUDriver:
     async def flush(self) -> None:
         self.generation += 1
         self.started = False
+        self._sent_audio = self._played_audio = 0
         for _, future in list(self.pending.values()):
             if not future.done():
                 future.cancel()
@@ -216,7 +236,9 @@ def attach_realtime(app: FastAPI, config: dict[str, Any], backend: Any) -> None:
                     driver = GPUDriver(callbacks, websocket, settings.tts.sample_rate)
                     return driver
 
-                transport = PhoneTransport(factory, number="", call_id=uuid.uuid4().hex)
+                transport = PhoneTransport(
+                    factory, number="", call_id=uuid.uuid4().hex, pace_audio=False
+                )
                 assert driver is not None
 
                 async def state(value: str) -> None:

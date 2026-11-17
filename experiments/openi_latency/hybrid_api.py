@@ -9,12 +9,12 @@ import hmac
 import io
 import json
 import os
-import queue
 import threading
 import time
 import uuid
 import wave
 from collections.abc import AsyncIterator, Callable, Iterator
+from concurrent.futures import CancelledError as FutureCancelledError
 from contextlib import asynccontextmanager, contextmanager
 from email import policy
 from email.parser import BytesParser
@@ -108,22 +108,41 @@ async def bridge(
 ) -> AsyncIterator[Any]:
     """推理只在拥有生成器的线程结束；断连设置独立取消标记并丢弃迟到结果。"""
     cancelled = threading.Event()
-    events: queue.Queue[tuple[str, Any]] = queue.Queue(maxsize=8)
+    events: asyncio.Queue[tuple[str, Any]] = asyncio.Queue(maxsize=8)
+    loop = asyncio.get_running_loop()
 
     def put(kind: str, value: Any) -> None:
-        while not cancelled.is_set():
-            try:
-                events.put((kind, value), timeout=0.1)
-                return
-            except queue.Full:
-                pass
+        if cancelled.is_set():
+            return
+        delivery = events.put((kind, value))
+        try:
+            pending = asyncio.run_coroutine_threadsafe(delivery, loop)
+        except RuntimeError:
+            delivery.close()
+            return
+        try:
+            while not cancelled.is_set():
+                try:
+                    pending.result(timeout=0.1)
+                    return
+                except TimeoutError:
+                    continue
+                except FutureCancelledError:
+                    return
+        finally:
+            pending.cancel()
 
     def run() -> None:
         try:
-            for value in factory(cancelled):
-                if cancelled.is_set():
-                    break
-                put("item", value)
+            iterator = factory(cancelled)
+            try:
+                for value in iterator:
+                    if cancelled.is_set():
+                        break
+                    put("item", value)
+            finally:
+                if close := getattr(iterator, "close", None):
+                    close()
         except Exception as exc:
             put("error", exc)
         finally:
@@ -132,10 +151,7 @@ async def bridge(
     threading.Thread(target=run, daemon=True).start()
     try:
         while True:
-            try:
-                kind, value = await asyncio.to_thread(events.get, True, 0.2)
-            except queue.Empty:
-                continue
+            kind, value = await events.get()
             if kind == "done":
                 return
             if kind == "error":

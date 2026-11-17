@@ -101,6 +101,58 @@ class Socket:
         self.events.append(data)
 
 
+async def test_gpu_flush_cannot_relabel_old_pcm_as_the_new_generation() -> None:
+    async def noop(*args: Any) -> None:
+        pass
+
+    starting, release = asyncio.Event(), asyncio.Event()
+
+    class PausedSocket(Socket):
+        async def send_json(self, event: Any) -> None:
+            await super().send_json(event)
+            if event["type"] == "audio-start" and event["generation"] == 0:
+                starting.set()
+                await release.wait()
+
+    socket = PausedSocket()
+    driver = GPUDriver(MediaCallbacks(noop, noop, noop, noop), socket, 24000)  # type: ignore[arg-type]
+    sending = asyncio.create_task(driver.send_audio(b"\x11\x11" * 480))
+    await asyncio.wait_for(starting.wait(), 1)
+    flushing = asyncio.create_task(driver.flush())
+    await asyncio.sleep(0)
+    release.set()
+    await asyncio.gather(sending, flushing)
+    assert not any(isinstance(item, bytes) for item in socket.events)
+    await driver.send_audio(b"\x22\x22" * 480)
+    assert socket.events[-1] == b"\x00\x00\x00\x01" + b"\x22\x22" * 480
+    await driver.close()
+
+
+async def test_gpu_skips_redundant_playback_roundtrips_but_waits_for_new_pcm() -> None:
+    async def noop(*args: Any) -> None:
+        pass
+
+    socket = Socket()
+    driver = GPUDriver(MediaCallbacks(noop, noop, noop, noop), socket, 24000)  # type: ignore[arg-type]
+    await asyncio.wait_for(driver.wait_played(), 0.1)
+    assert socket.events == []
+    await driver.send_audio(b"\x01\x02" * 480)
+    waiting = asyncio.create_task(driver.wait_played())
+    await asyncio.sleep(0)
+    driver.played(socket.events[-1])
+    await asyncio.wait_for(waiting, 1)
+    count = len(socket.events)
+    await asyncio.wait_for(driver.wait_played(), 0.1)
+    assert len(socket.events) == count
+    await driver.send_audio(b"\x03\x04" * 480)
+    waiting = asyncio.create_task(driver.wait_played())
+    await asyncio.sleep(0)
+    assert not waiting.done()
+    driver.played(socket.events[-1])
+    await asyncio.wait_for(waiting, 1)
+    await driver.close()
+
+
 async def test_actual_playback_ack_and_old_generation_cannot_commit() -> None:
     async def noop(*args: Any) -> None:
         pass
@@ -117,6 +169,7 @@ async def test_actual_playback_ack_and_old_generation_cannot_commit() -> None:
     await driver.flush()
     with pytest.raises(asyncio.CancelledError):
         await first
+    await driver.send_audio(b"\x03\x04")
     second = asyncio.create_task(driver.wait_played())
     await asyncio.sleep(0)
     driver.played(checkpoint)

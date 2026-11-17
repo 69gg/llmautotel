@@ -162,7 +162,9 @@ class RunningTransport:
 
 
 @pytest.fixture
-async def running_transport() -> AsyncGenerator[RunningTransport, None]:
+async def running_transport(
+    request: pytest.FixtureRequest,
+) -> AsyncGenerator[RunningTransport, None]:
     drivers: list[ControlledDriver] = []
 
     def factory(callbacks: MediaCallbacks) -> ControlledDriver:
@@ -170,7 +172,12 @@ async def running_transport() -> AsyncGenerator[RunningTransport, None]:
         drivers.append(driver)
         return driver
 
-    transport = PhoneTransport(factory, number="13800138000", call_id=str(uuid4()))
+    transport = PhoneTransport(
+        factory,
+        number="13800138000",
+        call_id=str(uuid4()),
+        pace_audio=getattr(request, "param", True),
+    )
     incoming, outgoing = FrameLog(), FrameLog()
     worker = PipelineWorker(
         Pipeline([transport.input(), incoming, transport.output(), outgoing]),
@@ -220,6 +227,24 @@ async def test_output_resamples_paces_and_flushes_partial_sentence_before_text(
     assert await running.outgoing.wait_for(TTSTextFrame) is text
 
 
+@pytest.mark.parametrize("running_transport", [False], indirect=True)
+async def test_gpu_relay_sends_available_pcm_without_replaying_its_duration(
+    running_transport: RunningTransport,
+) -> None:
+    running = running_transport
+    running.driver.played.clear()
+    text = TTSTextFrame("完整句子。", aggregated_by="sentence")
+    await running.worker.queue_frames(
+        [TTSAudioRawFrame((2000).to_bytes(2, "little") * 4800, 24000, 1), text]
+    )
+    await asyncio.wait_for(running.driver.waiting.wait(), 3)
+    assert len(running.driver.audio) == 10
+    assert running.driver.times[-1] - running.driver.times[0] < 0.1
+    assert text not in running.outgoing.frames
+    running.driver.played.set()
+    assert await running.outgoing.wait_for(TTSTextFrame) is text
+
+
 @pytest.mark.parametrize(
     "checkpoint",
     [
@@ -242,6 +267,7 @@ async def test_response_end_and_hangup_markers_wait_for_playback(
     assert await running.outgoing.wait_for(type(checkpoint)) is checkpoint
 
 
+@pytest.mark.parametrize("running_transport", [True, False], indirect=True)
 async def test_interrupt_cancels_ack_old_pcm_and_old_text(
     running_transport: RunningTransport,
 ) -> None:
