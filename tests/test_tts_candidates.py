@@ -83,6 +83,24 @@ def test_resampling_keeps_duration_and_frequency_across_arbitrary_chunk_boundari
     assert peak == 440
 
 
+def test_candidate_environment_rejects_inherited_cuda_extensions(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from experiments.openi_latency.tts_autotest import install
+
+    environment = tmp_path / "candidate"
+    environment.mkdir()
+    (environment / "pyvenv.cfg").write_text("include-system-site-packages = true\n")
+    commands: list[list[str]] = []
+    monkeypatch.setattr(
+        "experiments.openi_latency.tts_autotest.subprocess.run",
+        lambda args, **kwargs: commands.append(args),
+    )
+    with pytest.raises(ValueError, match="inherits_system_packages"):
+        install(tmp_path, environment, ["vllm==0.9.0"])
+    assert not commands
+
+
 def test_pcm_passthrough_clips_without_changing_sample_count() -> None:
     assert np.frombuffer(FloatPCM(24000).feed([-2, 0, 2]), dtype="<i2").tolist() == [
         -32767,

@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
-import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
 
 
-def prepare_cached_environment(root: Path, environment: Path, lock_name: str) -> None:
+def prepare_cached_environment(
+    root: Path, environment: Path, lock_name: str, *, installer: Path | None = None
+) -> None:
     """镜像只缓存权重和部分依赖；重放完整锁，不能把目录存在当作准备完成。"""
     if __package__:
         from .prepare_worker import image_requirements
@@ -21,7 +23,7 @@ def prepare_cached_environment(root: Path, environment: Path, lock_name: str) ->
     requirements.write_text(image_requirements((root / lock_name).read_text()))
     subprocess.run(
         [
-            str(environment / "bin/uv"),
+            str(installer or environment / "bin/uv"),
             "pip",
             "install",
             "--python",
@@ -80,12 +82,25 @@ def run_candidate(
     return {"error": "candidate_failed", "returncode": result.returncode}
 
 
-def install(environment: Path, packages: list[str]) -> None:
+def install(root: Path, environment: Path, packages: list[str]) -> None:
+    installer = Path("/tmp/llmautotel-qwen3-worker/bin/uv")
     if not environment.exists():
-        shutil.copytree("/tmp/llmautotel-latency-worker", environment, symlinks=True)
+        subprocess.run(
+            ["/tmp/llmautotel-latency-worker/bin/python", "-m", "venv", str(environment)],
+            check=True,
+            timeout=60,
+        )
+    # A copied --system-site-packages venv inherits CUDA extensions built for the
+    # image's Torch. vLLM replaces Torch, so its environment must be isolated.
+    configuration = (environment / "pyvenv.cfg").read_text().lower()
+    if "include-system-site-packages = false" not in configuration:
+        raise ValueError("candidate_environment_inherits_system_packages")
+    prepare_cached_environment(
+        root, environment, "requirements-worker.lock", installer=installer
+    )
     subprocess.run(
         [
-            "/tmp/llmautotel-qwen3-worker/bin/uv",
+            str(installer),
             "pip",
             "install",
             "--python",
@@ -100,6 +115,11 @@ def install(environment: Path, packages: list[str]) -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--vllm-only", action="store_true", help="补测隔离环境中的 vLLM，并重跑配对 Qwen 基线"
+    )
+    arguments = parser.parse_args()
     root = Path(__file__).resolve().parent
     os.chdir(root)
     output = Path("/tmp/output")
@@ -154,10 +174,12 @@ def main() -> None:
         "load_vllm": False,
         "poll_interval_seconds": 0.005,
     }
-    candidate("cosyvoice3_native_5ms", "cosyvoice3", "/tmp/llmautotel-latency-worker", cosy)
+    if not arguments.vllm_only:
+        candidate("cosyvoice3_native_5ms", "cosyvoice3", "/tmp/llmautotel-latency-worker", cosy)
     try:
         environment = Path("/tmp/llmautotel-cosy-vllm")
         install(
+            root,
             environment,
             ["vllm==0.9.0", "torchaudio==2.7.0", "transformers==4.51.3", "numpy==1.26.4"],
         )
@@ -179,10 +201,11 @@ def main() -> None:
         winner = choose_fastest(reports, baseline="qwen3_graph4")
     except ValueError:
         winner = "none"
-    if not winner.startswith("cosyvoice3"):
+    if not arguments.vllm_only and not winner.startswith("cosyvoice3"):
         try:
             environment = Path("/tmp/llmautotel-voxcpm15")
             install(
+                root,
                 environment,
                 ["voxcpm==1.5.0", "torch==2.6.0", "torchaudio==2.6.0", "transformers==4.51.3"],
             )
