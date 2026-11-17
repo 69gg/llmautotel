@@ -16,9 +16,6 @@ def main() -> None:
     os.environ.setdefault("PYTHONUNBUFFERED", "1")
     config = json.loads((root / "settings.run.json").read_text())
     if config.get("serve_models", False):
-        from reverse_tunnel import start
-
-        start(root, config)
         os.execv(os.sys.executable, [os.sys.executable, "-u", str(root / "prepare_worker.py")])
     environment = root / ".gateway-env"
     python = environment / "bin/python"

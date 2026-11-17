@@ -191,8 +191,5 @@
   "service_max_tts_chars": 2000,
   "service_max_messages": 200,
   "service_tts_model": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
-  "service_voice": "reference",
-  "reverse_tunnel": {
-    "enabled": false
-  }
+  "service_voice": "reference"
 }

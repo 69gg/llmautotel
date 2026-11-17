@@ -137,13 +137,3 @@ WebUI最新轮次的阶段明细默认展开，显示每项毫秒、占比与合
 发布过程中，首次 GPU 包漏带 `playback.py` 导致任务 937254 导入失败，已补齐并签名推送；937277 复用了旧提交后停止。正确版本 937279 在模型加载期间被过早停止，停止后日志确认实时业务导入已成功，未证实新的依赖问题；随后使用相同正确版本启动当前 937289，等待其实际 ready 后才切换配置。原任务 935318 已停止，不应再使用其旧地址。部署过程中存在模型加载中断窗口；当前任务保持运行，不再为本次测试重启。
 
 成功、失败、构建与 HTTPS 检查均记录在[脱敏报告](../experiments/openi_latency/results/2026-11-17-pipeline-deployment.json)。本机未下载或运行模型，测试音频仅在内存中处理。
-
-## 官方入口不可达时的可选反向通道
-
-`settings.service.json` 的 `reverse_tunnel.enabled` 默认关闭。必要时，GPU 启动器可派生一个轻量 OpenSSH 客户端，主动连接业务服务器，将业务服务器的一个 **127.0.0.1** 端口转发到 GPU 的 `OPENI_SELF_PORT`。模型及语音管线仍在 GPU，网页、播放和历史仍在原服务器；模型 Bearer 鉴权保持生效，HTTP/WebSocket 都经同一加密连接。
-
-启用时明确提供 `host`、`username`、`ssh_port`、`remote_port`、`known_host`、`identity_directory` 和 `public_key_output`。`known_host` 使用从服务器现有 SSH 主机公钥取得的完整 known_hosts 行，严格校验，不能关闭主机校验。GPU 自行生成临时 Ed25519 私钥，目录 0700、文件 0600；目录必须与平台输出目录分离。平台只收到 `public_key_output` 中的公钥 JSON，不接收私钥、模型密钥或对话。通过登录后的 OpenI 结果下载取得公钥，在服务器完成授权后才能建立转发。
-
-服务器使用独立无交互登录账号及[受限 SSH 配置模板](../deploy/gpu-tunnel.sshd.conf.example)，仅允许指定回环端口的远程转发，禁止 shell、其他监听端口、本地转发、TTY、agent 和 X11。authorized_keys 同时使用 `restrict,port-forwarding,permitlisten="127.0.0.1:指定端口"`。先用 `sshd -t` 检查后 reload，不修改根账号授权或网页入口。客户端断开后重连，启动器/模型主进程退出时关闭 SSH 子进程。
-
-仅在通过此通道验证 `/health`、鉴权和实际 PCM 后，备份 SQLite，再把三组模型根地址改为 `http://127.0.0.1:指定端口/v1`，保留 `voice.pipeline=gpu`，最后重启并验证开场、问答、打断和播放确认。转发进程启动或公钥上传成功本身不算上线。若停用，先切回已验证的入口，再撤销公钥；删除 GPU 任务会使其临时私钥消失。
