@@ -93,7 +93,9 @@ def run_candidate(
     return {"error": "candidate_failed", "returncode": result.returncode}
 
 
-def install(root: Path, environment: Path, packages: list[str]) -> None:
+def install(
+    root: Path, environment: Path, lock_name: str = "requirements-cosy-vllm.lock"
+) -> None:
     installer = Path("/tmp/llmautotel-qwen3-worker/bin/uv")
     if not environment.exists():
         subprocess.run(
@@ -106,9 +108,6 @@ def install(root: Path, environment: Path, packages: list[str]) -> None:
     configuration = (environment / "pyvenv.cfg").read_text().lower()
     if "include-system-site-packages = false" not in configuration:
         raise ValueError("candidate_environment_inherits_system_packages")
-    prepare_cached_environment(
-        root, environment, "requirements-worker.lock", installer=installer
-    )
     subprocess.run(
         [
             str(installer),
@@ -118,7 +117,9 @@ def install(root: Path, environment: Path, packages: list[str]) -> None:
             str(environment / "bin/python"),
             "--index-url",
             "https://mirrors.aliyun.com/pypi/simple",
-            *packages,
+            "--no-deps",
+            "-r",
+            str(root / lock_name),
         ],
         check=True,
         timeout=7200,
@@ -210,11 +211,7 @@ def main(argv: list[str] | None = None) -> None:
     if not arguments.vox_only:
         try:
             environment = Path("/tmp/llmautotel-cosy-vllm")
-            install(
-                root,
-                environment,
-                ["vllm==0.9.0", "torchaudio==2.7.0", "transformers==4.51.3", "numpy==1.26.4"],
-            )
+            install(root, environment)
             source, writable = Path(cosy["model_path"]), Path("/tmp/cosyvoice3-vllm-model")
             writable.mkdir(exist_ok=True)
             for item in source.iterdir():

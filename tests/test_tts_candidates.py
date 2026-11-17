@@ -97,7 +97,7 @@ def test_candidate_environment_rejects_inherited_cuda_extensions(
         lambda args, **kwargs: commands.append(args),
     )
     with pytest.raises(ValueError, match="inherits_system_packages"):
-        install(tmp_path, environment, ["vllm==0.9.0"])
+        install(tmp_path, environment)
     assert not commands
 
 
@@ -181,3 +181,25 @@ def test_candidate_retry_modes_are_exclusive_before_any_gpu_work() -> None:
     with pytest.raises(SystemExit) as error:
         main(["--vox-only", "--vllm-only"])
     assert error.value.code == 2
+
+
+def test_vllm_replays_full_lock_with_cuda_in_an_isolated_environment(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from experiments.openi_latency.tts_autotest import install
+
+    environment = tmp_path / "isolated"
+    environment.mkdir()
+    (environment / "pyvenv.cfg").write_text("include-system-site-packages = false\n")
+    lock = tmp_path / "requirements-cosy-vllm.lock"
+    lock.write_text("torch==2.7.0\nvllm==0.9.0\n")
+    commands: list[list[str]] = []
+    monkeypatch.setattr(
+        "experiments.openi_latency.tts_autotest.subprocess.run",
+        lambda args, **kwargs: commands.append(args),
+    )
+    install(tmp_path, environment)
+    assert len(commands) == 1
+    assert commands[0][-3:] == ["--no-deps", "-r", str(lock)]
+    assert "--python" in commands[0] and str(environment / "bin/python") in commands[0]
+    assert lock.read_text() == "torch==2.7.0\nvllm==0.9.0\n"

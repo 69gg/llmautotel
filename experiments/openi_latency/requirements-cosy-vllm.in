@@ -1,0 +1,2 @@
+-r requirements-worker.in
+vllm==0.9.0

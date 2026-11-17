@@ -1,6 +1,6 @@
 # OpenI 语音延迟原型（实验）
 
-TTS 候选任务使用 `tts_autotest.py`：在同一 GPU 以相同参考音、文本与输出采样率重跑 Qwen3、CosyVoice3 和必要时的 VoxCPM1.5，并分别记录加载预热、有效首音、RTF 及播放队列断粮。vLLM 替换 Torch，必须使用不继承系统 site-packages 的环境，避免加载旧 FlashAttention CUDA 扩展。Vox 与镜像共用 Torch 2.6，按 `requirements-voxcpm.lock` 重放全部非 CUDA 依赖，安装前后检查 Torch、torchaudio 版本和真实 CUDA 运算，避免重复下载整套 CUDA。准备失败只记失败，不当作模型慢。`--vllm-only` 与 `--vox-only` 分别补测候选和配对 Qwen 基线，不重复其他候选；二者互斥。下载、编译、推理仅在 GPU，准备阶段超时 7200 秒；有进度的下载不因短时无日志而中断。
+TTS 候选任务使用 `tts_autotest.py`：在同一 GPU 以相同参考音、文本与输出采样率重跑 Qwen3、CosyVoice3 和必要时的 VoxCPM1.5，并分别记录加载预热、有效首音、RTF 及播放队列断粮。vLLM 替换 Torch，必须使用不继承系统 site-packages 的环境，避免加载旧 FlashAttention CUDA 扩展；按完整 `requirements-cosy-vllm.lock` 安装，包括 Torch/CUDA，禁止运行时重新解析依赖。该锁由 worker 输入加 vLLM 0.9.0，并通过独立 overrides 将 Torch/torchaudio 固定为 2.7.0 后生成。Vox 与镜像共用 Torch 2.6，按 `requirements-voxcpm.lock` 重放全部非 CUDA 依赖，安装前后检查 Torch、torchaudio 版本和真实 CUDA 运算，避免重复下载整套 CUDA。准备失败只记失败，不当作模型慢。`--vllm-only` 与 `--vox-only` 分别补测候选和配对 Qwen 基线，不重复其他候选；二者互斥。下载、编译、推理仅在 GPU，准备阶段超时 7200 秒；有进度的下载不因短时无日志而中断。
 
 依赖下载另设 `UV_HTTP_TIMEOUT=600`、`UV_HTTP_RETRIES=5`、`UV_CONCURRENT_DOWNLOADS=4`，避免只延长父进程却仍沿用下载器的默认短超时；显式传入的同名环境变量优先。此项只改善环境准备可靠性，不计作模型推理提速。
 
