@@ -114,12 +114,12 @@ def install(root: Path, environment: Path, packages: list[str]) -> None:
     )
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--vllm-only", action="store_true", help="补测隔离环境中的 vLLM，并重跑配对 Qwen 基线"
     )
-    arguments = parser.parse_args()
+    arguments = parser.parse_args(argv)
     root = Path(__file__).resolve().parent
     os.chdir(root)
     output = Path("/tmp/output")

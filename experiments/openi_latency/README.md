@@ -346,6 +346,10 @@ GPU 按生成代次标注音频；插话后发出 flush，服务器清播放队�
 
 ### 2026-11-17 TTS 对照与统计拆分（实施中）
 
+平台不支持直接填写命令行参数时，可将 `tts_vllm_autotest.py` 作为补测启动文件；
+它复用同一测试器的 `--vllm-only` 路径，重测 Qwen 基线及 CosyVoice3 vLLM，
+不重跑原生 CosyVoice3 或下载 VoxCPM。补测环境不继承镜像全局 CUDA 扩展。
+
 `tts_candidates.py` 在 GPU 上使用相同文本、参考音和 24 kHz PCM 比较
 Qwen3-TTS graph4、CosyVoice3 与 VoxCPM1.5；模型加载及预热单列。
 统计有效首音、首 PCM、整段 RTF、音频总时长和供音断档，全部配对样本成功、
