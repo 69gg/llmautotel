@@ -1,0 +1,15 @@
+# 替换占位符后安装到 sshd_config.d；sshd -t 通过后仅 reload SSH。
+Match User REPLACE_WITH_TUNNEL_USER
+    AuthorizedKeysFile REPLACE_WITH_AUTHORIZED_KEYS_FILE
+    PasswordAuthentication no
+    KbdInteractiveAuthentication no
+    PubkeyAuthentication yes
+    AllowTcpForwarding remote
+    PermitListen 127.0.0.1:REPLACE_WITH_LOOPBACK_PORT
+    PermitOpen none
+    GatewayPorts no
+    PermitTTY no
+    X11Forwarding no
+    AllowAgentForwarding no
+    ForceCommand /bin/false
+Match all
