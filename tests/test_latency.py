@@ -27,6 +27,42 @@ from llmautotel.store import Store
 from llmautotel.voice import VoiceCallbacks, VoiceSession
 
 
+def test_tts_request_metric_splits_waiting_without_changing_total_or_legacy_rows() -> None:
+    from pipecat.observers.user_bot_latency_observer import (
+        LatencyBreakdown,
+        LatencyContribution,
+        LatencyOwnerKind,
+        TTFBBreakdownMetrics,
+    )
+
+    from llmautotel.latency import latency_parts
+
+    breakdown = LatencyBreakdown(
+        contributions=[
+            LatencyContribution(
+                key="speech_synthesis",
+                label="speech synthesis",
+                owner="LocalTTS#1",
+                owner_kind=LatencyOwnerKind.SERVICE,
+                start_time=10,
+                duration_secs=0.8,
+            )
+        ],
+        ttfb=[
+            TTFBBreakdownMetrics(processor="LocalLLM#1", start_time=10.1, duration_secs=0.1),
+            TTFBBreakdownMetrics(processor="LocalTTS#1", start_time=10.25, duration_secs=0.54),
+        ],
+    )
+    parts = latency_parts(breakdown)
+    assert [(part.stage, part.duration_ms) for part in parts] == [
+        ("sentence_aggregation", 250),
+        ("tts_inference", 550),
+    ]
+    assert sum(part.duration_ms for part in parts) == 800
+    breakdown.ttfb.clear()
+    assert latency_parts(breakdown)[0].stage == "speech_synthesis"
+
+
 async def aggregate(aggregator: FirstClauseTextAggregator, text: str) -> list[str]:
     return [item.text async for item in aggregator.aggregate(text)]
 

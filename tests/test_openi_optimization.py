@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import functools
 import struct
+import time
 from collections.abc import Iterator
 
 import pytest
@@ -11,6 +12,7 @@ import pytest
 from experiments.openi_latency.optimization import (
     LeadingSilenceFilter,
     ReplyAudioCache,
+    bind_cosy_poll_interval,
     bind_streaming_chunk_options,
 )
 from experiments.openi_latency.protocol import PlaybackClock
@@ -77,6 +79,26 @@ class ChangedUpstream:
 def test_upstream_change_fails_instead_of_silently_mismeasuring() -> None:
     with pytest.raises(ValueError, match="upstream_chunk_assignment_changed"):
         bind_streaming_chunk_options(ChangedUpstream())
+
+
+class CosyPoll:
+    def tts(self) -> Iterator[float]:
+        time.sleep(0.1)
+        yield 25
+
+
+def test_cosy_poll_only_changes_current_instance_and_preserves_chunk_size(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    delays: list[float] = []
+    monkeypatch.setattr(time, "sleep", delays.append)
+    model = CosyPoll()
+    bind_cosy_poll_interval(model, 0.005)
+    assert list(model.tts()) == [25]
+    assert list(CosyPoll().tts()) == [25]
+    assert delays == [0.005, 0.1]
+    with pytest.raises(ValueError, match="invalid_cosy_poll_interval"):
+        bind_cosy_poll_interval(model, 0)
 
 
 def test_patch_uses_source_globals_through_foreign_decorator_namespace() -> None:

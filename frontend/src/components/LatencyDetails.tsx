@@ -3,6 +3,7 @@ import type { TurnLatency } from '../types';
 const labels: Record<string, string> = {
   endpointing_wait: '停口确认', transcription: '语音识别 ASR', turn_detection: '回合判断',
   llm_inference: '文本生成 LLM', sentence_aggregation: '分句等待', speech_synthesis: '分句与合成 TTS',
+  tts_inference: '语音合成 TTS（请求至首 PCM）',
   output_transport: '输出排队', pipeline: '管线处理', first_request: '开场准备',
   llm_tool_call: '工具参数生成', function_handler: '工具处理', turn_completion: '回合确认',
   waiting_for_user: '等待用户', awaiting_speakable_text: '正文等待',

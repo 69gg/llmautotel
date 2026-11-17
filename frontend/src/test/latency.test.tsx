@@ -63,3 +63,12 @@ it('缺少阶段与零耗时均明确展示，未知阶段保留名称', () => {
   expect(screen.queryByText(/NaN|Infinity/)).not.toBeInTheDocument();
   expect(screen.getAllByText('—')).toHaveLength(2);
 });
+
+
+it('分别显示分句等待和请求后合成，并兼容原来无法拆分的统计', () => {
+  render(<LatencyDetails entries={[{ ...reply, parts: [{ stage: 'sentence_aggregation', duration_ms: 120 }, { stage: 'tts_inference', duration_ms: 430 }, { stage: 'speech_synthesis', duration_ms: 100 }] }]} expandLatest />);
+  expect(screen.getByText('分句等待')).toBeVisible();
+  expect(screen.getByText('语音合成 TTS（请求至首 PCM）')).toBeVisible();
+  expect(screen.getByText('分句与合成 TTS')).toBeVisible();
+  expect(screen.getByText('430.0 ms')).toBeVisible();
+});

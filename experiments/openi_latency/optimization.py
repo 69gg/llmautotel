@@ -137,3 +137,43 @@ def bind_streaming_chunk_options(model: Any) -> dict[str, Any]:
         "source_sha256": hashlib.sha256(source.encode()).hexdigest(),
         "modified_assignments": changes,
     }
+
+
+def bind_cosy_poll_interval(model: Any, interval_seconds: float) -> dict[str, Any]:
+    """只缩短当前 CosyVoice 实例的令牌就绪轮询，不改变训练分块大小。"""
+    if not 0.001 <= interval_seconds <= 0.1:
+        raise ValueError("invalid_cosy_poll_interval")
+    original = inspect.unwrap(type(model).tts)
+    source = textwrap.dedent(inspect.getsource(original))
+    tree = ast.parse(source)
+    changes = 0
+
+    class PollInterval(ast.NodeTransformer):
+        def visit_Call(self, node: ast.Call) -> ast.AST:
+            nonlocal changes
+            if (
+                isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "time"
+                and node.func.attr == "sleep"
+            ):
+                if (
+                    len(node.args) != 1
+                    or not isinstance(node.args[0], ast.Constant)
+                    or node.args[0].value != 0.1
+                ):
+                    raise ValueError("upstream_cosy_poll_changed")
+                changes += 1
+                node.args = [ast.Constant(interval_seconds)]
+            return self.generic_visit(node)
+
+    tree = ast.fix_missing_locations(PollInterval().visit(tree))
+    if changes != 1:
+        raise ValueError("upstream_cosy_poll_not_unique")
+    namespace = dict(original.__globals__)
+    exec(compile(tree, original.__code__.co_filename, "exec"), namespace)
+    model.tts = MethodType(namespace[original.__name__], model)
+    return {
+        "source_sha256": hashlib.sha256(source.encode()).hexdigest(),
+        "poll_seconds": interval_seconds,
+    }
