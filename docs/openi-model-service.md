@@ -1,6 +1,6 @@
 # OpenI 双后端语音服务
 
-> 2026-11-18 当前状态：正式任务 937439 的官方入口连接超时，尚未完成健康或音频验收，业务服务器尚未切到该地址。VoxCPM 与隔离后的 CosyVoice3 vLLM 仍待补齐测试，不作最终选型。详见[当前候选与部署记录](pipeline-optimization.md#2026-11-18-候选复测进行中)。
+> 2026-11-18 当前状态：正式任务 937439 的官方入口连接超时，尚未完成健康或音频验收，业务服务器尚未切到该地址。VoxCPM1.5 编译版有效首音中位 407.4ms，同任务 Qwen 为 304.95ms；隔离后的 CosyVoice3 vLLM 仍在准备依赖，不作最终选型。详见[当前候选与部署记录](pipeline-optimization.md#2026-11-18-候选复测进行中)。
 
 当前架构由两个后端组成：自有服务器负责网页、WebRTC／电话入口、音频转发、输出播放和历史；OpenI GPU 常驻 SenseVoiceSmall、Qwen3-1.7B、Qwen3-TTS Base0.6B，并运行完整语音业务管线。两端通过一条鉴权 WebSocket 传输音频、状态和播放确认。`voice.pipeline=gpu` 启用新版，`local` 保留原服务器调用三个独立 HTTP API 的兼容方式。持续服务不自动停止 GPU。
 

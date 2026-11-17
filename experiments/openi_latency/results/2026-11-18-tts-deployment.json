@@ -1,0 +1,45 @@
+{
+  "checked_at": "2026-11-17T18:14:02.360337+00:00",
+  "release": "/opt/llmautotel/releases/20261117-tts-5af1990",
+  "base_urls": {
+    "asr": "https://dd06e868b51941ab.mlunotebook.openi.org.cn/v1",
+    "llm": "https://dd06e868b51941ab.mlunotebook.openi.org.cn/v1",
+    "tts": "https://dd06e868b51941ab.mlunotebook.openi.org.cn/v1"
+  },
+  "models": {
+    "asr": "FunAudioLLM/SenseVoiceSmall",
+    "llm": "Qwen/Qwen3-1.7B",
+    "tts": "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
+  },
+  "pipeline": "gpu",
+  "playback_speed": 1.0,
+  "business_health": {
+    "status": "ok"
+  },
+  "active_call": false,
+  "service": {
+    "NRestarts": "0",
+    "ActiveState": "active"
+  },
+  "gpu_endpoint_checks": [
+    {
+      "url": "https://ce2b44f296be4d97.mlunotebook.openi.org.cn/health",
+      "error": "URLError",
+      "detail": "<urlopen error timed out>",
+      "elapsed_ms": 15033.2
+    },
+    {
+      "url": "https://dd06e868b51941ab.mlunotebook.openi.org.cn/health",
+      "error": "URLError",
+      "detail": "<urlopen error timed out>",
+      "elapsed_ms": 15029.1
+    }
+  ],
+  "status": "blocked_official_gpu_endpoint_connection_timeout",
+  "production_task_id": 937439,
+  "gpu_ready_verified": false,
+  "configuration_switched": false,
+  "full_pipeline_smoke_completed": false,
+  "browser_acceptance_performed": false,
+  "local_model_download_or_inference": false
+}
