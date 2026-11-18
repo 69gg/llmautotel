@@ -1,5 +1,5 @@
 {
-  "checked_at": "2026-11-18T13:28:54.898Z",
+  "checked_at": "2026-11-18T14:18:23.368Z",
   "release": "/opt/llmautotel/releases/20261118-qwen3-4023485",
   "base_urls": {
     "asr": "https://dd06e868b51941ab.mlunotebook.openi.org.cn/v1",
@@ -36,7 +36,7 @@
       "elapsed_ms": 15029.1
     }
   ],
-  "status": "business_ready_replacement_gpu_waiting_resources",
+  "status": "business_ready_gpu_running_official_ingress_unreachable",
   "production_task_id": 938351,
   "gpu_ready_verified": false,
   "configuration_switched": false,
@@ -77,8 +77,8 @@
     "system_ca_verified": true
   },
   "production_task_name": "voice-qwen3-20261118r2",
-  "production_task_status": "WAITING",
-  "production_task_start_time": null,
+  "production_task_status": "RUNNING",
+  "production_task_start_time": "2026-11-18T13:48:45+00:00",
   "expected_official_gpu_base": "https://f8cb3488e32a490a.mlunotebook.openi.org.cn",
   "official_endpoint_api": {
     "code": 0,
@@ -89,14 +89,18 @@
   },
   "current_gpu_endpoint_checks": [
     {
-      "url": "https://dd4f414e59884ec8.mlunotebook.openi.org.cn/health",
+      "checked_at": "2026-11-18T14:06:00+00:00",
+      "url": "https://f8cb3488e32a490a.mlunotebook.openi.org.cn/health",
       "error": "URLError",
-      "elapsed_ms": 24157.7
+      "detail": "connection_timeout",
+      "elapsed_ms": 24145.2
     },
     {
-      "url": "http://dd4f414e59884ec8.mlunotebook.openi.org.cn/health",
+      "checked_at": "2026-11-18T14:06:00+00:00",
+      "url": "http://f8cb3488e32a490a.mlunotebook.openi.org.cn/health",
       "error": "URLError",
-      "elapsed_ms": 24080.4
+      "detail": "connection_timeout",
+      "elapsed_ms": 24130.5
     }
   ],
   "official_gateway_tcp_checks": [
@@ -175,7 +179,7 @@
     "agreed": true
   },
   "gpu_source_bundle_files_matched_business": 29,
-  "rechecked_at": "2026-11-18T13:42:34.841Z",
+  "rechecked_at": "2026-11-18T14:18:23.368Z",
   "startup_failure": {
     "task_id": 937535,
     "phase": "installing_qwen3_dependencies",
@@ -222,7 +226,7 @@
       "platform_running_did_not_imply_app_alive": true
     }
   },
-  "production_task_detailed_status": "centerPending",
+  "production_task_detailed_status": "-",
   "production_task_created_at": "2026-11-18T13:20:30+00:00",
   "scheduling_events": [
     {
@@ -275,11 +279,10 @@
     "note": "Replacement still WAITING; these failures do not establish model runtime state."
   },
   "account_resources_recheck": {
-    "running": 0,
-    "starting": 0,
-    "restarting": 0,
-    "waiting": 1,
-    "only_waiting_task_id": 938351,
+    "checked_at": "2026-11-18T14:14:52Z",
+    "running": 1,
+    "waiting": 0,
+    "production_task_confirmed_independently_by_brief_api": 938351,
     "experimental_gpu_left_running": false
   },
   "deployment_continuation": {
@@ -312,7 +315,7 @@
     "safety_checks_used_real_models_or_restarted_service": false,
     "real_benchmark_completed": false,
     "readiness_deadline_does_not_stop_formal_GPU": true,
-    "verified_at": "2026-11-18T13:41:52Z",
+    "verified_at": "2026-11-18T14:16:37Z",
     "pcm_preflight_validation": {
       "checked_at": "2026-11-18T13:43:02.448202+00:00",
       "script_sha256": "fc41595f5a495b48e5412d28ec88feb37f9e02ec028e065008f8f453a9449b5d",
@@ -372,5 +375,108 @@
     "minimum_pcm_samples": 480,
     "pcm_signal_rms_threshold": 300,
     "pcm_threshold_configurable": true
+  },
+  "initial_business_checked_at": "2026-11-18T13:28:54.898Z",
+  "previous_r1_endpoint_checks": [
+    {
+      "url": "https://dd4f414e59884ec8.mlunotebook.openi.org.cn/health",
+      "error": "URLError",
+      "elapsed_ms": 24157.7
+    },
+    {
+      "url": "http://dd4f414e59884ec8.mlunotebook.openi.org.cn/health",
+      "error": "URLError",
+      "elapsed_ms": 24080.4
+    }
+  ],
+  "account_resources_before_start": {
+    "running": 0,
+    "starting": 0,
+    "restarting": 0,
+    "waiting": 1,
+    "only_waiting_task_id": 938351,
+    "experimental_gpu_left_running": false
+  },
+  "model_process_alive_verified": false,
+  "model_loading_completed_verified": false,
+  "post_start_network_checks": {
+    "business_server_checked_at": "2026-11-18T14:17:33.565980+00:00",
+    "business_server_tcp_443": [
+      {
+        "ip": "120.237.18.54",
+        "connected": false,
+        "timeout_seconds": 3,
+        "elapsed_ms": 3009.4
+      },
+      {
+        "ip": "210.22.22.132",
+        "connected": false,
+        "timeout_seconds": 3,
+        "elapsed_ms": 3008.7
+      },
+      {
+        "ip": "218.17.115.247",
+        "connected": false,
+        "timeout_seconds": 3,
+        "elapsed_ms": 3004.4
+      }
+    ],
+    "business_server_dashboard_tcp_443": {
+      "ip": "117.163.55.142",
+      "connected": true,
+      "elapsed_ms": 42.1
+    },
+    "earlier_business_server_tcp_80_and_443": "all_three_official_ingress_IPs_timed_out_at_2026-11-18T14:10:08Z",
+    "local_physical_interface_check": {
+      "checked_at": "2026-11-18T14:11:00Z",
+      "interface": "enp7s0",
+      "method": "SO_BINDTODEVICE_bypassing_TUN",
+      "ports": [
+        80,
+        443
+      ],
+      "all_three_official_ingress_IPs_timed_out": true,
+      "timeout_seconds": 3
+    },
+    "DNS_crosscheck": {
+      "checked_at": "2026-11-18T14:12:46Z",
+      "resolvers": [
+        "Google_DoH",
+        "Cloudflare_DoH"
+      ],
+      "A_agree": [
+        "120.237.18.54",
+        "210.22.22.132",
+        "218.17.115.247"
+      ],
+      "AAAA": []
+    },
+    "browser_health_and_official_debug_entry": "ERR_CONNECTION_CLOSED",
+    "failure_stage": "TCP_before_TLS_HTTP_and_inference",
+    "inference_latency_measured": false
+  },
+  "platform_runtime_observability": {
+    "checked_at": "2026-11-18T14:18:23.368Z",
+    "brief_status": "RUNNING",
+    "brief_duration_at_2026_11_18T14_17_05Z": "00:28:20",
+    "self_endpoint_url_code": 0,
+    "node_info": {
+      "nodes": [
+        {
+          "id": 0,
+          "log_file_name": ""
+        }
+      ]
+    },
+    "log_api": "The AI task is still running. Please check the logs once it completes.",
+    "log_download": {
+      "http_status": 200,
+      "length": 70,
+      "body": "The AI task is still running. Please check the logs once it completes."
+    },
+    "resource_usage_code": 6003,
+    "output_files": [],
+    "debug_url_assigned_but_unreachable": true,
+    "notes": "Platform RUNNING and assigned URLs do not verify the model process. No task stop or rebuild was performed to obtain logs."
   }
 }
