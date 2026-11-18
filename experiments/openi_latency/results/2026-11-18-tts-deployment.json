@@ -175,7 +175,7 @@
     "agreed": true
   },
   "gpu_source_bundle_files_matched_business": 29,
-  "rechecked_at": "2026-11-18T13:28:54.898Z",
+  "rechecked_at": "2026-11-18T13:42:34.841Z",
   "startup_failure": {
     "task_id": 937535,
     "phase": "installing_qwen3_dependencies",
@@ -273,5 +273,104 @@
     },
     "openi_dashboard_tcp_443_ms": 33.7,
     "note": "Replacement still WAITING; these failures do not establish model runtime state."
+  },
+  "account_resources_recheck": {
+    "running": 0,
+    "starting": 0,
+    "restarting": 0,
+    "waiting": 1,
+    "only_waiting_task_id": 938351,
+    "experimental_gpu_left_running": false
+  },
+  "deployment_continuation": {
+    "kind": "one_off_server_deployment_not_cron",
+    "unit": "llmautotel-gpu-deploy-938351.service",
+    "started_at": "2026-11-18T13:38:04.863368+00:00",
+    "readiness_deadline_at": "2026-11-18T14:38:04.863368+00:00",
+    "verified_active": true,
+    "last_verified_phase": "waiting_gpu_health",
+    "status_file": "/var/lib/llmautotel/gpu-deploy-938351.json",
+    "benchmark_output": "/var/lib/llmautotel/gpu-benchmark-938351.json",
+    "prerequisites": [
+      "unchanged_settings_snapshot",
+      "GPU_health_ready",
+      "no_active_call",
+      "existing_authenticated_model_and_PCM_preflight"
+    ],
+    "single_mutating_deployment_attempt": true,
+    "after_deployment": "3 real complete-pipeline benchmark samples if no active call",
+    "preflight_failure_does_not_repeat_mutating_deployment": true,
+    "configuration_or_call_failure_leaves_configuration_unchanged": true,
+    "controlled_safety_cases_passed": [
+      "not_ready",
+      "changed_config",
+      "active_call",
+      "business_unreachable",
+      "preflight_failed",
+      "deployed"
+    ],
+    "safety_checks_used_real_models_or_restarted_service": false,
+    "real_benchmark_completed": false,
+    "readiness_deadline_does_not_stop_formal_GPU": true,
+    "verified_at": "2026-11-18T13:41:52Z",
+    "pcm_preflight_validation": {
+      "checked_at": "2026-11-18T13:43:02.448202+00:00",
+      "script_sha256": "fc41595f5a495b48e5412d28ec88feb37f9e02ec028e065008f8f453a9449b5d",
+      "cases": [
+        {
+          "case": "zero_pcm",
+          "passed": true,
+          "result": "no_effective_pcm",
+          "configuration_mutated": false,
+          "service_restarted": false
+        },
+        {
+          "case": "near_silence",
+          "passed": true,
+          "result": "no_effective_pcm",
+          "configuration_mutated": false,
+          "service_restarted": false
+        },
+        {
+          "case": "odd_bytes",
+          "passed": true,
+          "result": "invalid_pcm",
+          "configuration_mutated": false,
+          "service_restarted": false
+        },
+        {
+          "case": "too_short",
+          "passed": true,
+          "result": "invalid_pcm",
+          "configuration_mutated": false,
+          "service_restarted": false
+        },
+        {
+          "case": "threshold_boundary",
+          "passed": true,
+          "result": "accepted",
+          "configuration_mutated": false,
+          "service_restarted": false
+        },
+        {
+          "case": "effective_voice",
+          "passed": true,
+          "result": "accepted",
+          "configuration_mutated": false,
+          "service_restarted": false
+        },
+        {
+          "case": "configured_threshold",
+          "passed": true,
+          "result": "no_effective_pcm",
+          "configuration_mutated": false,
+          "service_restarted": false
+        }
+      ],
+      "real_network_or_model_requests": false
+    },
+    "minimum_pcm_samples": 480,
+    "pcm_signal_rms_threshold": 300,
+    "pcm_threshold_configurable": true
   }
 }
