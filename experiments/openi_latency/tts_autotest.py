@@ -9,15 +9,10 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-
-def download_environment() -> dict[str, str]:
-    """长准备期限也覆盖下载器自身；保留调用方显式设置。"""
-    defaults = {
-        "UV_HTTP_TIMEOUT": "600",
-        "UV_HTTP_RETRIES": "5",
-        "UV_CONCURRENT_DOWNLOADS": "4",
-    }
-    return defaults | dict(os.environ)
+if __package__:
+    from .prepare_worker import download_environment
+else:
+    from prepare_worker import download_environment
 
 
 def prepare_cached_environment(

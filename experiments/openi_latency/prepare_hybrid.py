@@ -6,8 +6,12 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from prepare_qwen3 import prepare as prepare_qwen3
-from prepare_worker import image_python, image_requirements
+if __package__:
+    from .prepare_qwen3 import prepare as prepare_qwen3
+    from .prepare_worker import download_environment, image_python, image_requirements
+else:
+    from prepare_qwen3 import prepare as prepare_qwen3
+    from prepare_worker import download_environment, image_python, image_requirements
 
 
 def prepare(root: Path, config: dict[str, Any]) -> None:
@@ -26,6 +30,7 @@ def prepare(root: Path, config: dict[str, Any]) -> None:
         [str(python), "-m", "pip", "install", "--index-url", config["pip_index_url"], "uv==0.13.8"],
         check=True,
         timeout=config["dependency_prepare_timeout_seconds"],
+        env=download_environment(),
     )
     lock = root / "requirements-asr-image.run.lock"
     lock.write_text(image_requirements((root / "requirements-asr.lock").read_text()))
@@ -44,5 +49,6 @@ def prepare(root: Path, config: dict[str, Any]) -> None:
         ],
         check=True,
         timeout=config["dependency_prepare_timeout_seconds"],
+        env=download_environment(),
     )
     prepare_qwen3(root, config)

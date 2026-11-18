@@ -12,10 +12,10 @@ from typing import Any
 
 if __package__:
     from .prepare_omni import download_asset
-    from .prepare_worker import image_python, image_requirements
+    from .prepare_worker import download_environment, image_python, image_requirements
 else:
     from prepare_omni import download_asset
-    from prepare_worker import image_python, image_requirements
+    from prepare_worker import download_environment, image_python, image_requirements
 
 
 def prepare(root: Path, config: dict[str, Any]) -> None:
@@ -49,6 +49,7 @@ def prepare(root: Path, config: dict[str, Any]) -> None:
         [str(python), "-m", "pip", "install", "--index-url", config["pip_index_url"], "uv==0.13.8"],
         check=True,
         timeout=config["dependency_prepare_timeout_seconds"],
+        env=download_environment(),
     )
     subprocess.run(
         [
@@ -65,6 +66,7 @@ def prepare(root: Path, config: dict[str, Any]) -> None:
         ],
         check=True,
         timeout=config["dependency_prepare_timeout_seconds"],
+        env=download_environment(),
     )
     if config.get("serve_realtime", False):
         subprocess.run(
@@ -82,6 +84,7 @@ def prepare(root: Path, config: dict[str, Any]) -> None:
             ],
             check=True,
             timeout=config["dependency_prepare_timeout_seconds"],
+            env=download_environment(),
         )
         os.environ["PYTHONPATH"] = str(root / "app_src")
         # 在加载模型前检查整条业务链路的导入，及早暴露镜像 Python 差异。

@@ -13,6 +13,18 @@ from pathlib import Path
 from typing import Any
 
 
+def download_environment() -> dict[str, str]:
+    """生产与对照任务共用下载策略，调用方设置始终优先。"""
+    defaults = {
+        "UV_HTTP_TIMEOUT": "600",
+        "UV_HTTP_RETRIES": "5",
+        "UV_CONCURRENT_DOWNLOADS": "4",
+        "PIP_DEFAULT_TIMEOUT": "600",
+        "PIP_RETRIES": "5",
+    }
+    return defaults | dict(os.environ)
+
+
 def image_python(config: dict[str, Any]) -> str:
     """验证镜像自带的 GPU 环境，避免误用平台启动器的 Python。"""
     probe = (
@@ -126,7 +138,8 @@ def main() -> None:
     subprocess.run(
         [str(python), "-m", "pip", "install", "--index-url", config["pip_index_url"], "uv==0.13.8"],
         check=True,
-        timeout=120,
+        timeout=config.get("dependency_prepare_timeout_seconds", 1500),
+        env=download_environment(),
     )
     subprocess.run(
         [
@@ -144,7 +157,8 @@ def main() -> None:
             str(requirements),
         ],
         check=True,
-        timeout=1500,
+        timeout=config.get("dependency_prepare_timeout_seconds", 1500),
+        env=download_environment(),
     )
     os.environ.setdefault("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", "1")
     os.environ.setdefault("OMP_NUM_THREADS", "4")
